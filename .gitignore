@@ -1,3 +1,11 @@
+*
+!*.*
+!Makefile
+*.tsv
+*.txt
+*.sh
+.vscode/
+
 # Prerequisites
 *.d
 
