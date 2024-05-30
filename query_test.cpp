@@ -27,7 +27,7 @@ int main(int argc, char *argv[])
     internal::timer tm;
     auto [d, itr] = query.stQuery(s, t);
     tm.stop();
-    printf("%u\t%u\t%u\n", s, t, d);
+    printf("%u\t%u\t%u\t%u\t%f\n", s, t, itr, d, tm.total_time());
   }
   for (int i = 0; i < sssp_query_num; i++) {
     NodeId s = hash32(i) % origin_graph.n;
