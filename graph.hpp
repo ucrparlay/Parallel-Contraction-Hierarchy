@@ -75,14 +75,14 @@ struct PchGraph : public Graph {
 
 bool is_space(char c) {
   switch (c) {
-    case '\r':
-    case '\t':
-    case '\n':
-    case ' ':
-    case 0:
-      return true;
-    default:
-      return false;
+  case '\r':
+  case '\t':
+  case '\n':
+  case ' ':
+  case 0:
+    return true;
+  default:
+    return false;
   }
 }
 
@@ -204,6 +204,25 @@ void write_pbbs_format(PchGraph &graph, char const *filename) {
   }
   for (size_t i = 0; i < graph.layer; i++) {
     fprintf(fp, "%u\n", graph.layerOffset[i]);
+  }
+  for (size_t i = 0; i < graph.n; i++) {
+    fprintf(fp, "%lu\n", graph.in_offset[i]);
+  }
+  for (size_t i = 0; i < graph.rm; i++) {
+    fprintf(fp, "%d\n", graph.in_E[i].v);
+  }
+  for (size_t i = 0; i < graph.rm; i++) {
+    fprintf(fp, "%d\n", graph.in_E[i].w);
+  }
+  for (size_t i = 0; i < graph.ccOffset.size(); i++) {
+    fprintf(fp, "%u\n", graph.ccOffset[i]);
+  }
+  for (size_t i = 0; i < graph.n; i++) {
+    fprintf(fp, "%d\n", graph.ccRank[i]);
+  }
+  for (size_t i = 0; i < graph.ccOffset.size() - 1; i++) {
+    fprintf(fp, "%d\n",
+            (graph.level[graph.layerOffset[graph.ccOffset[i]]] != 0));
   }
   fclose(fp);
 }
