@@ -54,16 +54,16 @@ struct Edge {
 };
 
 struct Graph {
-  NodeId n;
-  EdgeId m;
+  size_t n;
+  size_t m;
   sequence<EdgeId> offset;
   sequence<Edge> E;
   Graph() : n(0), m(0) {}
 };
 
 struct PchGraph : public Graph {
-  EdgeId rm;
-  NodeId layer = 0;
+  size_t rm;
+  size_t layer = 0;
   sequence<EdgeId> in_offset;
   sequence<Edge> in_E;
   sequence<NodeId> level;
@@ -71,18 +71,83 @@ struct PchGraph : public Graph {
   sequence<NodeId> layerOffset;
   sequence<NodeId> ccOffset;
   sequence<NodeId> ccRank;
+
+  void read_pch_format(char *const filename);
+  void write_pch_format(char *const filename);
 };
+
+void PchGraph::write_pch_format(char *const filename) {
+  ofstream ofs(filename);
+  if (!ofs.is_open()) {
+    std::cerr << "Error: Cannot open file " << filename << std::endl;
+    abort();
+  }
+  size_t num_cc=0;
+  ofs.write(reinterpret_cast<char *>(&n), sizeof(size_t));
+  ofs.write(reinterpret_cast<char *>(&m), sizeof(size_t));
+  ofs.write(reinterpret_cast<char *>(&rm), sizeof(size_t));
+  ofs.write(reinterpret_cast<char *>(&layer), sizeof(size_t));
+  ofs.write(reinterpret_cast<char *>(&num_cc), sizeof(size_t));
+  ofs.write(reinterpret_cast<char *>(offset.begin()),
+            sizeof(EdgeId) * (n + 1));
+  ofs.write(reinterpret_cast<char *>(E.begin()), sizeof(Edge) * m);
+  ofs.write(reinterpret_cast<char *>(in_offset.begin()),
+            sizeof(EdgeId) * (n + 1));
+  ofs.write(reinterpret_cast<char *>(in_E.begin()), sizeof(Edge) * m);
+  assert(level.size() == n);
+  ofs.write(reinterpret_cast<char *>(level.begin()), sizeof(NodeId) * n);
+  assert(rank.size() == n);
+  ofs.write(reinterpret_cast<char *>(rank.begin()), sizeof(NodeId) * n);
+  assert(layerOffset.size() == n + 1);
+  ofs.write(reinterpret_cast<char *>(layerOffset.begin()), sizeof(NodeId) * n);
+  assert(ccOffset.size() == num_cc + 1);
+  ofs.write(reinterpret_cast<char *>(ccOffset.begin()), sizeof(NodeId) * n);
+  assert(ccRank.size() == n);
+  ofs.write(reinterpret_cast<char *>(ccRank.begin()), sizeof(NodeId) * n);
+  ofs.close();
+}
+
+void PchGraph::read_pch_format(char *const filename) {
+  ifstream ifs(filename);
+  if (!ifs.is_open()) {
+    std::cerr << "Error: Cannot open file " << filename << std::endl;
+    abort();
+  }
+  size_t num_cc=0;
+  ifs.read(reinterpret_cast<char *>(&n), sizeof(size_t));
+  ifs.read(reinterpret_cast<char *>(&m), sizeof(size_t));
+  ifs.read(reinterpret_cast<char *>(&rm), sizeof(size_t));
+  ifs.read(reinterpret_cast<char *>(&layer), sizeof(size_t));
+  ifs.read(reinterpret_cast<char *>(&num_cc), sizeof(size_t));
+  ifs.read(reinterpret_cast<char *>(offset.begin()),
+            sizeof(EdgeId) * (n + 1));
+  ifs.read(reinterpret_cast<char *>(E.begin()), sizeof(Edge) * m);
+  ifs.read(reinterpret_cast<char *>(in_offset.begin()),
+            sizeof(EdgeId) * (n + 1));
+  ifs.read(reinterpret_cast<char *>(in_E.begin()), sizeof(Edge) * m);
+  assert(level.size() == n);
+  ifs.read(reinterpret_cast<char *>(level.begin()), sizeof(NodeId) * n);
+  assert(rank.size() == n);
+  ifs.read(reinterpret_cast<char *>(rank.begin()), sizeof(NodeId) * n);
+  assert(layerOffset.size() == n + 1);
+  ifs.read(reinterpret_cast<char *>(layerOffset.begin()), sizeof(NodeId) * n);
+  assert(ccOffset.size() == num_cc + 1);
+  ifs.read(reinterpret_cast<char *>(ccOffset.begin()), sizeof(NodeId) * n);
+  assert(ccRank.size() == n);
+  ifs.read(reinterpret_cast<char *>(ccRank.begin()), sizeof(NodeId) * n);
+  ifs.close();
+}
 
 bool is_space(char c) {
   switch (c) {
-  case '\r':
-  case '\t':
-  case '\n':
-  case ' ':
-  case 0:
-    return true;
-  default:
-    return false;
+    case '\r':
+    case '\t':
+    case '\n':
+    case ' ':
+    case 0:
+      return true;
+    default:
+      return false;
   }
 }
 
@@ -187,9 +252,11 @@ void write_pbbs_format(PchGraph &graph, char const *filename) {
   printf("Info: Writing pbbs format\n");
   FILE *fp = fopen(filename, "w");
   fprintf(fp, "WeightedAdjacency\n");
-  fprintf(fp, "%u\n", graph.n);
+  fprintf(fp, "%zu\n", graph.n);
   fprintf(fp, "%zu\n", graph.m);
-  fprintf(fp, "%u\n", graph.layer);
+  fprintf(fp, "%zu\n", graph.rm);
+  fprintf(fp, "%zu\n", graph.layerOffset.size());
+  fprintf(fp, "%zu\n", graph.ccOffset.size());
   for (size_t i = 0; i < graph.n; i++) {
     fprintf(fp, "%lu\n", graph.offset[i]);
   }
@@ -202,7 +269,7 @@ void write_pbbs_format(PchGraph &graph, char const *filename) {
   for (size_t i = 0; i < graph.m; i++) {
     fprintf(fp, "%d\n", graph.E[i].w);
   }
-  for (size_t i = 0; i < graph.layer; i++) {
+  for (size_t i = 0; i < graph.layerOffset.size(); i++) {
     fprintf(fp, "%u\n", graph.layerOffset[i]);
   }
   for (size_t i = 0; i < graph.n; i++) {
@@ -279,4 +346,79 @@ Graph generate_random_graph(size_t n, size_t m, int seed = 0) {
       parlay::make_slice(G.offset.rbegin(), G.offset.rend()),
       parlay::minm<EdgeId>());
   return G;
+}
+
+void read_contracted_graph(const char* const filename, PchGraph& contract){
+  ifstream file(filename, ifstream::in | ifstream::binary | ifstream::ate);
+  if (!file.is_open()) {
+    cerr << "Error: Cannot open file " << filename << '\n';
+    abort();
+  }
+  long end = file.tellg();
+  file.seekg(0, file.beg);
+  long length = end - file.tellg();
+
+  sequence<char> strings(length + 1);
+  file.read(strings.begin(), length);
+  file.close();
+
+  sequence<bool> flag(length);
+  parallel_for(0, length, [&](size_t i) {
+    if (is_space(strings[i])) {
+      strings[i] = 0;
+    }
+  });
+  flag[0] = strings[0];
+  parallel_for(1, length, [&](size_t i) {
+    if (is_space(strings[i - 1]) && !is_space(strings[i])) {
+      flag[i] = true;
+    } else {
+      flag[i] = false;
+    }
+  });
+
+  auto offset_seq = pack_index(flag);
+  sequence<char*> words(offset_seq.size());
+  parallel_for(0, offset_seq.size(),
+               [&](size_t i) { words[i] = strings.begin() + offset_seq[i]; });
+
+  size_t n = atol(words[1]);
+  contract.n = n;
+  contract.m = atol(words[2]);
+  contract.rm = atol(words[3]);
+  size_t layer = atol(words[4]);
+  size_t cc_nums = atol(words[5]);
+  assert(words.size() == n+n+n+n+contract.m+contract.m+contract.rm+contract.rm+layer+cc_nums+cc_nums+5);
+  contract.layer = layer;
+  contract.offset = sequence<EdgeId>(n + 1);
+  contract.in_offset = sequence<EdgeId>(n + 1);
+  contract.rank = sequence<NodeId>(n);
+  contract.layerOffset = sequence<NodeId>(layer + 1);
+  contract.level = sequence<NodeId>(n + 1);
+  contract.ccOffset = sequence<NodeId>(cc_nums);
+  contract.ccRank = sequence<NodeId>(n);
+  contract.E = sequence<Edge>(contract.m);
+  contract.in_E = sequence<Edge>(contract.rm);
+  sequence<bool> all_contracted(cc_nums);
+  parallel_for(0, n, [&](size_t i) { contract.offset[i] = atol(words[i + 6]); });
+  contract.offset[n] = contract.m;
+  parallel_for(0, n, [&](size_t i) { contract.rank[i] = atol(words[i + n + 6]); });
+  parallel_for(0, contract.m, [&](size_t i) { contract.E[i].v = atol(words[i + n + n + 6]); });
+  parallel_for(0, contract.m, [&](size_t i) { contract.E[i].w = atol(words[i + n + n + contract.m + 6]); });
+  parallel_for(0, layer, [&](size_t i) { contract.layerOffset[i] = atol(words[i + n + n + contract.m + contract.m + 6]); });
+  parallel_for(0, n, [&](size_t i) { contract.in_offset[i] = atol(words[i + n + n + contract.m + contract.m + layer + 6]);});
+  contract.in_offset[n] = contract.rm;
+  parallel_for(0, contract.rm, [&](size_t i) { contract.in_E[i].v = atol(words[i + n + n + n + contract.m + contract.m + layer + 6]);});
+  parallel_for(0, contract.rm, [&](size_t i) { contract.in_E[i].w = atol(words[i + n + n + n + contract.m + contract.m + contract.rm + layer + 6]);});
+  parallel_for(0, cc_nums, [&](size_t i) { contract.ccOffset[i] = atol(words[i + n + n + n + contract.m + contract.m + contract.rm + contract.rm + layer + 6]);});
+  parallel_for(0, n, [&](size_t i) { contract.ccRank[i] = atol(words[i + n + n + n + contract.m + contract.m + contract.rm + contract.rm + layer + cc_nums + 6]);});
+  parallel_for(0, cc_nums-1, [&](size_t i) { all_contracted[i] = atol(words[i + n + n + n + n + contract.m + contract.m + contract.rm + contract.rm + layer + cc_nums + 6]);});
+  parallel_for(0, cc_nums-1, [&](size_t i){
+    size_t stp=all_contracted[i];
+    parallel_for(contract.ccOffset[i], contract.ccOffset[i+1], [&](size_t j){
+      parallel_for(contract.layerOffset[j], contract.layerOffset[j+1], [&](size_t k){
+        contract.level[k]=stp+j-contract.ccOffset[i];
+      });
+    });
+  });
 }

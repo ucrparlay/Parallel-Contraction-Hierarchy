@@ -15,7 +15,7 @@ int main(int arcontracted_graph, char *argv[]) {
   INPUT_FILEPATH = argv[1];
   OUTPUT_FILEPATH = argv[2];
   size_t max_pop_count = 500;
-  int bidirect_verify_num = 0;
+  int bidirect_verify_num = 100;
   int sssp_verify_num = 100;
   if (arcontracted_graph > 3) max_pop_count = atol(argv[3]);
   if (arcontracted_graph > 4) bidirect_verify_num = atol(argv[4]);
@@ -105,5 +105,6 @@ int main(int arcontracted_graph, char *argv[]) {
     ofs << s << '\t' << tm.total_time() << '\n';
   }
   ofs.close();
+  write_pbbs_format(contracted_graph,OUTPUT_FILEPATH);
   return 0;
 }

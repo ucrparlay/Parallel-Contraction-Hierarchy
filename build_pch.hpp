@@ -182,7 +182,7 @@ void PCH::preprocess(bool remove_self_loops_and_parallel_edges = true) {
     // remove self loops and parallel edges
     auto pred = delayed_seq<bool>(G_in.m, [&](EdgeId i) {
       if (get<0>(edgelist[i]) == get<1>(edgelist[i])) {
-        // self loop././
+        // self loop
         return false;
       } else if (i != 0 && get<0>(edgelist[i]) == get<0>(edgelist[i - 1]) &&
                  get<1>(edgelist[i]) == get<1>(edgelist[i - 1])) {
@@ -551,14 +551,9 @@ double PCH::sampleUpperBound() {
     assert(!vertices_contracted[v]);
     sample_edge_diff[i] = edge_diff[v];
   }
-  cout << overlay_vertices[hash32(seed) % overlay_vertices.size()] << "\t"
-       << in_degree[overlay_vertices[hash32(seed) % overlay_vertices.size()]]
-       << "\t"
-       << out_degree[overlay_vertices[hash32(seed) % overlay_vertices.size()]]
-       << endl;
   sort(sample_edge_diff, sample_edge_diff + EDGEDIFF_SAMPLES + 1);
-  cout << sample_edge_diff[0] << "\t" << sample_edge_diff[10] << "\t"
-       << sample_edge_diff[100] << endl;
+  // cout << sample_edge_diff[0] << "\t" << sample_edge_diff[10] << "\t"
+  //      << sample_edge_diff[100] << endl;
   int id = EDGEDIFF_SAMPLES * 0.1;
   return sample_edge_diff[id];
 }
@@ -597,31 +592,17 @@ bool PCH::insertHelper(NodeId left, NodeId right, EdgeTy len, NodeId hop,
   assert(replaceFlag1 == replaceFlag2);
   if (replaceFlag1)
     return replaceFlag1;
-  // cerr << "in hash" << endl;
   pair<bool, NodeId> idx_left =
       newly_inserted_out_edges_hash.insert(left, make_pair(right, len), hop);
   if (idx_left.first) {
-    // if (left == 169431)
-    //   cerr << left << " to " << right << endl;
     write_add(&out_degree_tmp[left], 1);
   }
   pair<bool, NodeId> idx_right =
       newly_inserted_in_edges_hash.insert(right, make_pair(left, len), hop);
-  // if (right == 169431)
-  //   cerr << left << " to " << right << idx_left.second << " "
-  //        << idx_right.second << endl;
-
-  // if (left== 646704 ||right == 646704) {
-  //   printf("looking up %u from %u\n", left,right);
-  // }
   if (idx_right.first) {
     write_add(&in_degree_tmp[right], 1);
-    // if (right == 646704) {
-    //   printf("646704 is added by %u\n", left);
-    // }
   }
 
-  // assert(idx_left.first == idx_right.first);
   bag.insert(((uint64_t)idx_left.second << 32) | idx_right.second);
   return idx_right.first;
 }
@@ -717,23 +698,6 @@ void PCH::transfer_neighbors(NodeId u, NodeId *idx, NodeId *hop, EdgeTy *wgh,
       index = newly_inserted_in_edges_hash.next_index(index);
     }
     puts("");
-    // for(size_t i = 0; i < G.n; i++) {
-    //   if(offset[i+1]-offset[i]==0)continue;
-    //   printf("N(%zu): ", i);
-    //   for(size_t j = offset[i]; j < offset[i + 1]; j++) {
-    //       printf("(%d,%d,%d) ", E[j].v, E[j].w,vertices_contracted[E[j].v]);
-    //   }
-    //   puts("");
-    // }
-    // for(size_t i = 0; i < G.n; i++) {
-    //   if(G.offset[i+1]-G.offset[i]==0)continue;
-    //   printf("N(%zu): ", i);
-    //   for(size_t j = G.offset[i]; j < G.offset[i + 1]; j++) {
-    //       printf("(%d,%d,%d) ", G.E[j].v,
-    //       G.E[j].w,vertices_contracted[G.E[j].v]);
-    //   }
-    //   puts("");
-    // }
     NodeId v = E[offset[u] + 0].v;
     cerr << forward << " " << vertices_contracted[u] << " "
          << vertices_contracted[v] << " " << vertices_contracted[u] << " "
@@ -1055,17 +1019,7 @@ void PCH::buildContractionHierarchy() {
               }
             }
           }
-          // if(u==833739||u==646704){
-          //   cout<<"Neighbors of "<<u<<":\n";
-          //   for(NodeId k1=0;k1<in_degree[u];++k1)cout<<in_idx[k1]<<"\t";
-          //   cout<<endl;
-          //   for(NodeId k1=0;k1<out_degree[u];++k1)cout<<out_idx[k1]<<"\t";
-          //   cout<<endl;
-          // }
           for (NodeId k1 = 0; k1 < in_degree[u]; ++k1) {
-            // if(u == 646704) {
-            //   printf("646704 has in neighbor %u\n", in_idx[k1]);
-            // }
             assert(u != in_idx[k1]);
             assert(vertices_contracted[in_idx[k1]] == false);
 
@@ -1074,20 +1028,14 @@ void PCH::buildContractionHierarchy() {
             if (tentative_dist >= in_wgh[k1]) {
               backward_edges_in_ch_hash.insert(
                   u, make_pair(in_idx[k1], in_wgh[k1]), in_hop[k1]);
+              write_max(&G.level[in_idx[k1]], G.level[u] + 1, std::less<int>());
+              write_add(&removed_neighbor_num[in_idx[k1]], 1);
             } else {
               write_add(&in_degree_tmp[u], -1);
             }
             write_add(&out_degree_tmp[in_idx[k1]], -1);
-            // if (in_idx[k1] == 646704||in_idx[k1] == 57115) {
-            //   printf("%u out_degree is reduced by %u\n",in_idx[k1], u);
-            // }
-            write_max(&G.level[in_idx[k1]], G.level[u] + 1, std::less<int>());
-            write_add(&removed_neighbor_num[in_idx[k1]], 1);
           }
           for (NodeId k1 = 0; k1 < out_degree[u]; ++k1) {
-            // if(u == 646704) {
-            //   printf("646704 has out neighbor %u\n", out_idx[k1]);
-            // }
             assert(u != out_idx[k1]);
             assert(vertices_contracted[out_idx[k1]] == false);
             pair<NodeId, NodeId> nw = make_pair(u, out_idx[k1]);
@@ -1095,15 +1043,12 @@ void PCH::buildContractionHierarchy() {
             if (tentative_dist >= out_wgh[k1]) {
               forward_edges_in_ch_hash.insert(
                   u, make_pair(out_idx[k1], out_wgh[k1]), out_hop[k1]);
+              write_max(&G.level[out_idx[k1]], G.level[u] + 1, std::less<int>());
+              write_add(&removed_neighbor_num[out_idx[k1]], 1);
             } else {
               write_add(&out_degree_tmp[u], -1);
             }
             write_add(&in_degree_tmp[out_idx[k1]], -1);
-            // if (out_idx[k1] == 646704||out_idx[k1] == 57115) {
-            //   printf("%u in_degree is reduced by %u\n",out_idx[k1], u);
-            // }
-            write_max(&G.level[out_idx[k1]], G.level[u] + 1, std::less<int>());
-            write_add(&removed_neighbor_num[out_idx[k1]], 1);
           }
           vertices_contracted_tmp[u] = true;
         }
@@ -1130,10 +1075,16 @@ void PCH::buildContractionHierarchy() {
     vertices_need_score_update =
         parlay::filter(overlay_vertices,
                        [&](NodeId v) { return vertices_settled[v] == false; });
-    cout << "Overlay vertices number: " << overlay_vertices.size() << endl;
     t_reset.stop();
+    cout << "Overlay vertices number: " << overlay_vertices.size() << endl;
     // cerr << "reset" << endl;
   }
+  
+  cout<<t_reset.total_time()<<"\t";
+  cout<<t_prune.total_time()<<"\t";
+  cout<<t_contract.total_time()<<"\t";
+  cout<<t_clip.total_time()<<"\t";
+  cout<<t_score.total_time()<<endl;
 }
 void PCH::reorderByLayerAndCC(sequence<pair<NodeId, NodeId>> &node_and_ids) {
   sort_inplace(make_slice(node_and_ids), [&](const pair<NodeId, NodeId> &a,
@@ -1168,8 +1119,7 @@ void PCH::reorderByLayerAndCC(sequence<pair<NodeId, NodeId>> &node_and_ids) {
   return;
 }
 
-void reorder(PchGraph &G, sequence<pair<NodeId, NodeId>> &node_and_ids,
-             bool forward) {
+void reorder(PchGraph &G, bool forward) {
   sequence<EdgeId> &offset = forward ? G.offset : G.in_offset;
   sequence<Edge> &E = forward ? G.E : G.in_E;
   const EdgeId &m = forward ? G.m : G.rm;
@@ -1212,16 +1162,19 @@ void PCH::setOrderedLayer() {
   sequence<std::pair<size_t, NodeId>> layerMap(G.n);
   G.rank = sequence<NodeId>(G.n);
   G.layer = reduce(make_slice(G.level), maxm<NodeId>());
-  printf("G.layer: %u\n", G.layer);
 
   reorderByLayerAndCC(node_and_ids);
 
   parallel_for(0, G.n, [&](size_t i) { G.rank[node_and_ids[i].first] = i; });
+  // TODO(xiaojun): use tabulate
+  // G.level = tabulate(G.n, [&](size_t i) {
+  //   return G.level[G.order[i]];
+  // });
   sequence<NodeId> rank_reverse(G.n);
   parallel_for(0, G.n, [&](size_t i) { rank_reverse[G.rank[i]] = G.level[i]; });
   parallel_for(0, G.n, [&](size_t i) { G.level[i] = rank_reverse[i]; });
-  reorder(G, node_and_ids, true);
-  reorder(G, node_and_ids, false);
+  reorder(G, true);
+  reorder(G, false);
 }
 
 void PCH::dumpCH() {
@@ -1246,10 +1199,12 @@ void PCH::dumpCH() {
     bg = clip_from_hash(G.in_E, backward_edges_in_ch_hash, i, bg, false);
     assert(bg == G.in_offset[i + 1]);
   });
-  cout << "G.n: " << G.n << "\tG.m: " << G.m << "\tG.rm: " << G.rm << endl;
 }
 
 PchGraph PCH::createContractionHierarchy() {
+  internal::timer t;
+  t.reset();
+  t.start();
   preprocess(true);
 
 #ifdef DEBUG
@@ -1272,5 +1227,7 @@ PchGraph PCH::createContractionHierarchy() {
   buildContractionHierarchy();
   dumpCH();
   setOrderedLayer();
+  t.stop();
+  cout << G.n << "\t" << G.m << "\t" << G.rm  << "\t" << G.layer << "\t" << t.total_time() << endl;
   return G;
 }
