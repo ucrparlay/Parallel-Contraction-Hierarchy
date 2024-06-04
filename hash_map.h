@@ -179,4 +179,15 @@ struct hash_map2 {
       i = next_index(i);
     }
   }
+
+  bool delete_index(const index &k) {
+    H[k].key.first = KEY_MAX;
+    H[k].key.second = KEY_MAX;
+    H[k].value = V_MAX;
+    return true;
+  }
+
+  void clear_all() {
+    parallel_for(0, m, [&](index i) { delete_index(i); });
+  }
 };

@@ -63,7 +63,7 @@ int main(int arcontracted_graph, char *argv[]) {
   PchGraph contracted_graph = solver->createContractionHierarchy();
   delete (solver);
   PchQuery query(contracted_graph, origin_graph);
-  ofstream ofs("pch.tsv");
+  ofstream ofs("pch.tsv", ios::app);
   ofs << fixed << setprecision(6);
   printf("Start query\n");
   query.make_inverse();
@@ -73,16 +73,13 @@ int main(int arcontracted_graph, char *argv[]) {
     internal::timer tm;
     auto [d, itr] = query.stQuery(s, t);
     tm.stop();
-    if (d == DIST_MAX) {
-      continue;
-    }
     EdgeTy exp_dist = query.stVerifier(s, t);
     if (exp_dist != d) {
       printf("Error: s: %u, t: %u, output_dist: %u, exp_dist: %u\n", s, t, d,
              exp_dist);
       abort();
     }
-    printf("s: %u, t: %u, d: %u\n", s, t, d);
+    printf("s: %u, t: %u, itr: %u, d: %u\n", s, t, itr, d);
     ofs << s << '\t' << t << '\t' << itr << '\t' << d << '\t' << tm.total_time()
         << '\n';
   }
@@ -105,6 +102,6 @@ int main(int arcontracted_graph, char *argv[]) {
     ofs << s << '\t' << tm.total_time() << '\n';
   }
   ofs.close();
-  write_pbbs_format(contracted_graph,OUTPUT_FILEPATH);
+  write_pbbs_format(contracted_graph, OUTPUT_FILEPATH);
   return 0;
 }

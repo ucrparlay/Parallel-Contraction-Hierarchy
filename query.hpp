@@ -23,7 +23,7 @@ struct PchQuery {
   sequence<EdgeTy> ssspVerifier(NodeId s);
   EdgeTy stVerifier(NodeId s, NodeId t);
   pair<EdgeTy, int> stQuery(NodeId s, NodeId t);
-  sequence<EdgeTy> ssspQuery(NodeId s);
+  sequence<EdgeTy> ssspQuery(NodeId s, bool remap);
 
   // for testing
   void make_inverse();
@@ -136,8 +136,6 @@ pair<EdgeTy, int> PchQuery::stQuery(NodeId s, NodeId t) {
     }
     itr++;
     NodeId u = u_d >> 1, dir = u_d & 1;
-    const auto &out_offset = dir ? GC.in_offset : GC.offset;
-    const auto &out_E = dir ? GC.in_E : GC.E;
     const auto &in_offset = dir ? GC.offset : GC.in_offset;
     const auto &in_E = dir ? GC.E : GC.in_E;
     bool stall = false;
@@ -154,6 +152,8 @@ pair<EdgeTy, int> PchQuery::stQuery(NodeId s, NodeId t) {
     if (stall) {
       continue;
     }
+    const auto &out_offset = dir ? GC.in_offset : GC.offset;
+    const auto &out_E = dir ? GC.in_E : GC.E;
     for (EdgeId i = out_offset[u]; i < out_offset[u + 1]; i++) {
       NodeId v_d = out_E[i].v << 1 | dir;
       NodeId w = out_E[i].w;
@@ -230,7 +230,7 @@ pair<EdgeTy, int> PchQuery::stQuery(NodeId s, NodeId t) {
 //   return mapping_dist;
 // }
 
-sequence<EdgeTy> PchQuery::ssspQuery(NodeId s) {
+sequence<EdgeTy> PchQuery::ssspQuery(NodeId s, bool remap=true) {
   s = GC.rank[s];
   current_timestamp++;
   using P = pair<EdgeTy, NodeId>;
@@ -281,16 +281,18 @@ sequence<EdgeTy> PchQuery::ssspQuery(NodeId s) {
       }
     }
   }
-
-  // TODO: this part could be discounted from the timer
-  sequence<EdgeTy> mapping_dist(n);
-  parallel_for(0, n, [&](NodeId i) {
-    NodeId v = GC.rank[i];
-    if (timestamp[v] != current_timestamp) {
-      mapping_dist[i] = DIST_MAX;
-    } else {
-      mapping_dist[i] = dist[v];
-    }
-  });
-  return mapping_dist;
+  if(remap){
+    // TODO: this part could be discounted from the timer
+    sequence<EdgeTy> mapping_dist(n);
+    parallel_for(0, n, [&](NodeId i) {
+      NodeId v = GC.rank[i];
+      if (timestamp[v] != current_timestamp) {
+        mapping_dist[i] = DIST_MAX;
+      } else {
+        mapping_dist[i] = dist[v];
+      }
+    });
+    return mapping_dist;
+  }
+  return dist;
 }
