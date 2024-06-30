@@ -26,6 +26,7 @@ struct PCH {
   sequence<NodeId> vertices_need_score_update;
   sequence<bool> vertices_settled;
   sequence<bool> vertices_contracted;
+  sequence<NodeId> vertices_contract_order;
   sequence<bool> vertices_contracted_tmp;
   sequence<NodeId> removed_neighbor_num;
 
@@ -888,6 +889,7 @@ void PCH::buildContractionHierarchy() {
   sequence<NodeId> out_degree_tmp(G.n);
   vertices_settled = sequence<bool>(G.n, true);
   vertices_contracted = sequence<bool>(G.n, false);
+  vertices_contract_order = sequence<NodeId>(G.n, false);
   vertices_contracted_tmp = sequence<bool>(G.n, false);
   NodeId tot = 0;
   // int itr = 0;
@@ -996,6 +998,7 @@ void PCH::buildContractionHierarchy() {
         if (eligibleForRemoval(u)) {
           // printf("Node %u eligible\n", u);
           assert(vertices_contracted_tmp[u] == false);
+          vertices_contract_order[u] = g_tot_level;
           NodeId in_idx[in_degree[u]];
           NodeId in_hop[in_degree[u]];
           EdgeTy in_wgh[in_degree[u]];
@@ -1084,7 +1087,7 @@ void PCH::buildContractionHierarchy() {
   ofstream ofs("pch.tsv", ios::app);
   ofs << t_reset.total_time() << '\t' << t_prune.total_time() << '\t'
       << t_contract.total_time() << '\t' << t_clip.total_time() << '\t'
-      << t_score.total_time() << '\n';
+      << t_score.total_time() << '\t';
   ofs.close();
   cout << "t_reset: " << t_reset.total_time() << '\n';
   cout << "t_prune: " << t_prune.total_time() << '\n';
@@ -1099,6 +1102,10 @@ void PCH::reorderByLayerAndCC(sequence<pair<NodeId, NodeId>> &node_and_ids) {
       return a.second < b.second;
     } else if (G.level[a.first] != G.level[b.first]) {
       return G.level[a.first] < G.level[b.first];
+    } else if (vertices_contract_order[a.first] !=
+               vertices_contract_order[b.first]) {
+      return vertices_contract_order[a.first] <
+             vertices_contract_order[b.first];
     }
     return a.first < b.first;
   });
@@ -1234,8 +1241,9 @@ PchGraph PCH::createContractionHierarchy() {
   setOrderedLayer();
   t.stop();
   ofstream ofs("pch.tsv", ios::app);
-  ofs << G.n << '\t' << G.m << '\t' << G.rm << '\t' << G.layer << '\t'
-      << t.total_time() << '\n';
+  // ofs << G.n << '\t' << G.m << '\t' << G.rm << '\t' << G.layer << '\t'
+  //     << t.total_time() << '\n';
+  ofs << t.total_time() << '\n';
   ofs.close();
   printf("G.n: %zu, G.m: %zu, G.rm: %zu, G.layer: %zu, total_time: %f\n", G.n,
          G.m, G.rm, G.layer, t.total_time());

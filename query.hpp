@@ -23,7 +23,7 @@ struct PchQuery {
   sequence<EdgeTy> ssspVerifier(NodeId s);
   EdgeTy stVerifier(NodeId s, NodeId t);
   pair<EdgeTy, int> stQuery(NodeId s, NodeId t);
-  sequence<EdgeTy> ssspQuery(NodeId s, bool remap);
+  sequence<EdgeTy> ssspQuery(NodeId s, bool remap, bool in_parallel);
 
   // for testing
   void make_inverse();
@@ -230,7 +230,8 @@ pair<EdgeTy, int> PchQuery::stQuery(NodeId s, NodeId t) {
 //   return mapping_dist;
 // }
 
-sequence<EdgeTy> PchQuery::ssspQuery(NodeId s, bool remap=true) {
+sequence<EdgeTy> PchQuery::ssspQuery(NodeId s, bool remap = true,
+                                     bool in_parallel = false) {
   s = GC.rank[s];
   current_timestamp++;
   using P = pair<EdgeTy, NodeId>;
@@ -262,26 +263,47 @@ sequence<EdgeTy> PchQuery::ssspQuery(NodeId s, bool remap=true) {
   // int lower_b = 0, upper_b = GC.layerOffset.size() - 1;
   int lower_b = GC.ccOffset[GC.ccRank[s]],
       upper_b = GC.ccOffset[GC.ccRank[s] + 1];
-  for (int i = upper_b - 1; i >= lower_b; --i) {
-    // parallel_for(G.layerOffset[i - 1], G.layerOffset[i], [&](size_t k) {
-    for (size_t k = GC.layerOffset[i]; k < GC.layerOffset[i + 1]; ++k) {
-      if (timestamp[k] != current_timestamp) {
-        timestamp[k] = current_timestamp;
-        dist[k] = DIST_MAX;
-      }
-      for (size_t j = GC.in_offset[k]; j < GC.in_offset[k + 1]; j++) {
-        NodeId v = GC.in_E[j].v;
-        EdgeTy w = GC.in_E[j].w;
-        if (timestamp[v] != current_timestamp || dist[v] == DIST_MAX) {
-          continue;
+  if (!in_parallel) {
+    for (int i = upper_b - 1; i >= lower_b; --i) {
+      // parallel_for(G.layerOffset[i - 1], G.layerOffset[i], [&](size_t k) {
+      for (size_t k = GC.layerOffset[i]; k < GC.layerOffset[i + 1]; ++k) {
+        if (timestamp[k] != current_timestamp) {
+          timestamp[k] = current_timestamp;
+          dist[k] = DIST_MAX;
         }
-        if (dist[k] > dist[v] + w) {
-          dist[k] = dist[v] + w;
+        for (size_t j = GC.in_offset[k]; j < GC.in_offset[k + 1]; j++) {
+          NodeId v = GC.in_E[j].v;
+          EdgeTy w = GC.in_E[j].w;
+          if (timestamp[v] != current_timestamp || dist[v] == DIST_MAX) {
+            continue;
+          }
+          if (dist[k] > dist[v] + w) {
+            dist[k] = dist[v] + w;
+          }
         }
       }
     }
+  } else {
+    for (int i = upper_b - 1; i >= lower_b; --i) {
+      parallel_for(GC.layerOffset[i], GC.layerOffset[i + 1], [&](size_t k) {
+        if (timestamp[k] != current_timestamp) {
+          timestamp[k] = current_timestamp;
+          dist[k] = DIST_MAX;
+        }
+        for (size_t j = GC.in_offset[k]; j < GC.in_offset[k + 1]; j++) {
+          NodeId v = GC.in_E[j].v;
+          EdgeTy w = GC.in_E[j].w;
+          if (timestamp[v] != current_timestamp || dist[v] == DIST_MAX) {
+            continue;
+          }
+          if (dist[k] > dist[v] + w) {
+            dist[k] = dist[v] + w;
+          }
+        }
+      });
+    }
   }
-  if(remap){
+  if (remap) {
     // TODO: this part could be discounted from the timer
     sequence<EdgeTy> mapping_dist(n);
     parallel_for(0, n, [&](NodeId i) {

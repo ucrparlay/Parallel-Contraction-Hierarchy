@@ -37,7 +37,7 @@ int main(int argc, char *argv[]) {
   for (int i = 0; i < sssp_query_num; i++) {
     NodeId s = hash32(i) % origin_graph.n;
     internal::timer tm;
-    auto dist = query.ssspQuery(s, false);
+    auto dist = query.ssspQuery(s, false, true);
     tm.stop();
     printf("s: %u, time: %f\n", s, tm.total_time());
     ofs << s << '\t' << tm.total_time() << '\n';

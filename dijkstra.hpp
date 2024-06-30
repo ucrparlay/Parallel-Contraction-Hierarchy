@@ -24,21 +24,36 @@ void dijkstra(size_t s, const Graph &G, EdgeTy *dist) {
   return;
 }
 
-void decompress_ch(size_t s, const PchGraph &G, EdgeTy *dist) {
+void decompress_ch(size_t s, const PchGraph &G, EdgeTy *dist,
+                   bool in_parallel = false) {
   size_t lower_b = G.ccOffset[G.ccRank[s]],
          upper_b = G.ccOffset[G.ccRank[s] + 1];
   if (G.level[G.layerOffset[lower_b]] == 0) lower_b++;
-  for (size_t i = upper_b; i > lower_b; --i) {
-    // parallel_for(G.layerOffset[i - 1], G.layerOffset[i], [&](size_t k) {
-    for (size_t k = G.layerOffset[i - 1]; k < G.layerOffset[i]; ++k) {
-      for (size_t j = G.in_offset[k]; j < G.in_offset[k + 1]; j++) {
-        NodeId v = G.in_E[j].v;
-        EdgeTy w = G.in_E[j].w;
-        if (dist[k] > dist[v] + w) {
-          dist[k] = dist[v] + w;
+  if (!in_parallel) {
+    for (size_t i = upper_b; i > lower_b; --i) {
+      // parallel_for(G.layerOffset[i - 1], G.layerOffset[i], [&](size_t k) {
+      for (size_t k = G.layerOffset[i - 1]; k < G.layerOffset[i]; ++k) {
+        for (size_t j = G.in_offset[k]; j < G.in_offset[k + 1]; j++) {
+          NodeId v = G.in_E[j].v;
+          EdgeTy w = G.in_E[j].w;
+          if (dist[k] > dist[v] + w) {
+            dist[k] = dist[v] + w;
+          }
         }
-      }
-    }  //);
+      }  //);
+    }
+  } else {
+    for (size_t i = upper_b; i > lower_b; --i) {
+      parallel_for(G.layerOffset[i - 1], G.layerOffset[i], [&](size_t k) {
+        for (size_t j = G.in_offset[k]; j < G.in_offset[k + 1]; j++) {
+          NodeId v = G.in_E[j].v;
+          EdgeTy w = G.in_E[j].w;
+          if (dist[k] > dist[v] + w) {
+            dist[k] = dist[v] + w;
+          }
+        }
+      });
+    }
   }
 }
 

@@ -102,6 +102,6 @@ int main(int arcontracted_graph, char *argv[]) {
     ofs << s << '\t' << tm.total_time() << '\n';
   }
   ofs.close();
-  write_pbbs_format(contracted_graph, OUTPUT_FILEPATH);
+  // write_pbbs_format(contracted_graph, OUTPUT_FILEPATH);
   return 0;
 }
