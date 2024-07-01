@@ -21,7 +21,7 @@ struct PchQuery {
   }
 
   sequence<EdgeTy> ssspVerifier(NodeId s);
-  EdgeTy stVerifier(NodeId s, NodeId t);
+  pair<EdgeTy, int> stVerifier(NodeId s, NodeId t);
   pair<EdgeTy, int> stQuery(NodeId s, NodeId t);
   sequence<EdgeTy> ssspQuery(NodeId s, bool remap, bool in_parallel);
 
@@ -81,13 +81,14 @@ sequence<EdgeTy> PchQuery::ssspVerifier(NodeId s) {
   return dist;
 }
 
-EdgeTy PchQuery::stVerifier(NodeId s, NodeId t) {
+pair<EdgeTy, int> PchQuery::stVerifier(NodeId s, NodeId t) {
   // TODO: change to bidirectional search
   sequence<EdgeTy> dist(n, DIST_MAX);
   using P = pair<EdgeTy, NodeId>;
   priority_queue<P, vector<P>, greater<P>> pq;
   dist[s] = 0;
   pq.push({dist[s], s});
+  int itr = 0;
   while (!pq.empty()) {
     auto [d, u] = pq.top();
     pq.pop();
@@ -97,6 +98,7 @@ EdgeTy PchQuery::stVerifier(NodeId s, NodeId t) {
     if (d != dist[u]) {
       continue;
     }
+    itr++;
     for (size_t i = G.offset[u]; i < G.offset[u + 1]; i++) {
       NodeId v = G.E[i].v;
       EdgeTy w = G.E[i].w;
@@ -106,7 +108,7 @@ EdgeTy PchQuery::stVerifier(NodeId s, NodeId t) {
       }
     }
   }
-  return dist[t];
+  return make_pair(dist[t], itr);
 }
 
 pair<EdgeTy, int> PchQuery::stQuery(NodeId s, NodeId t) {
@@ -136,21 +138,23 @@ pair<EdgeTy, int> PchQuery::stQuery(NodeId s, NodeId t) {
     }
     itr++;
     NodeId u = u_d >> 1, dir = u_d & 1;
-    const auto &in_offset = dir ? GC.offset : GC.in_offset;
-    const auto &in_E = dir ? GC.E : GC.in_E;
-    bool stall = false;
-    for (EdgeId i = in_offset[u]; i < in_offset[u + 1]; i++) {
-      NodeId v_d = in_E[i].v << 1 | dir;
-      NodeId w = in_E[i].w;
-      if (timestamp[v_d] == current_timestamp) {
-        if (dist[v_d] + w <= dist[u_d]) {
-          stall = true;
-          break;
+    if (GC.level[u] != 0) {
+      const auto &in_offset = dir ? GC.offset : GC.in_offset;
+      const auto &in_E = dir ? GC.E : GC.in_E;
+      bool stall = false;
+      for (EdgeId i = in_offset[u]; i < in_offset[u + 1]; i++) {
+        NodeId v_d = in_E[i].v << 1 | dir;
+        NodeId w = in_E[i].w;
+        if (timestamp[v_d] == current_timestamp) {
+          if (dist[v_d] + w <= dist[u_d]) {
+            stall = true;
+            break;
+          }
         }
       }
-    }
-    if (stall) {
-      continue;
+      if (stall) {
+        continue;
+      }
     }
     const auto &out_offset = dir ? GC.in_offset : GC.offset;
     const auto &out_E = dir ? GC.in_E : GC.E;
@@ -263,6 +267,9 @@ sequence<EdgeTy> PchQuery::ssspQuery(NodeId s, bool remap = true,
   // int lower_b = 0, upper_b = GC.layerOffset.size() - 1;
   int lower_b = GC.ccOffset[GC.ccRank[s]],
       upper_b = GC.ccOffset[GC.ccRank[s] + 1];
+  if (GC.level[GC.layerOffset[lower_b]] == 0) {
+    lower_b++;
+  }
   if (!in_parallel) {
     for (int i = upper_b - 1; i >= lower_b; --i) {
       // parallel_for(G.layerOffset[i - 1], G.layerOffset[i], [&](size_t k) {

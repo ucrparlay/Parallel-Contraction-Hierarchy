@@ -51,7 +51,13 @@ struct hash_map {
   std::pair<bool, K> insert(const K &k, const V &v, const V1 h) {
     index i = first_index(k);
     assert(k != v.first);
+    size_t num_probes = 0;
     while (true) {
+      num_probes++;
+      if (num_probes >= H.size()) {
+        printf("Hash map is full\n");
+        exit(0);
+      }
       if (H[i].valid == true) {
         if (H[i].key == KEY_MAX) {
           // H[i].valid = true;
@@ -149,7 +155,13 @@ struct hash_map2 {
   void insert(K &k, V v) {
     if (k.first == k.second) return;
     index i = first_index(k);
+    size_t num_probes = 0;
     while (true) {
+      num_probes++;
+      if (num_probes >= H.size()) {
+        printf("Hash map is full\n");
+        exit(0);
+      }
       if (H[i].key.first == KEY_MAX) {
         CAS(&H[i].key.first, KEY_MAX, k.first);
       }
