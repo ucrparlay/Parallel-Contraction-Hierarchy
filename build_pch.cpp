@@ -17,9 +17,15 @@ int main(int arcontracted_graph, char *argv[]) {
   size_t max_pop_count = 500;
   int bidirect_verify_num = 100;
   int sssp_verify_num = 100;
+  NodeId degree_bound = 0;
+  bool degree_bounded = false;
   if (arcontracted_graph > 3) max_pop_count = atol(argv[3]);
   if (arcontracted_graph > 4) bidirect_verify_num = atol(argv[4]);
   if (arcontracted_graph > 5) sssp_verify_num = atol(argv[5]);
+  if (arcontracted_graph > 6) {
+    degree_bound = atol(argv[6]);
+    degree_bounded = true;
+  }
 
   // #ifdef DEBUG
   //   size_t n = 100, m = 260;
@@ -59,7 +65,8 @@ int main(int arcontracted_graph, char *argv[]) {
   // #endif
 
   Graph origin_graph = read_graph(INPUT_FILEPATH);
-  PCH *solver = new PCH(origin_graph, max_pop_count);
+  PCH *solver =
+      new PCH(origin_graph, max_pop_count, degree_bounded, degree_bound);
   PchGraph contracted_graph = solver->createContractionHierarchy();
   delete (solver);
   PchQuery query(contracted_graph, origin_graph);
@@ -74,7 +81,7 @@ int main(int arcontracted_graph, char *argv[]) {
     auto [d, itr] = query.stQuery(s, t);
     tm.stop();
     internal::timer tm2;
-    auto [exp_dist, itr2]  = query.stVerifier(s, t);
+    auto [exp_dist, itr2] = query.stVerifier(s, t);
     tm2.stop();
     if (exp_dist != d) {
       printf("Error: s: %u, t: %u, output_dist: %u, exp_dist: %u\n", s, t, d,
@@ -82,8 +89,8 @@ int main(int arcontracted_graph, char *argv[]) {
       abort();
     }
     printf("s: %u, t: %u, itr: %u, d: %u\n", s, t, itr, d);
-    ofs << s << '\t' << t << '\t' << itr << '\t' << itr2 << '\t' << d << '\t' << tm.total_time() << '\t' << tm2.total_time()
-        << '\n';
+    ofs << s << '\t' << t << '\t' << itr << '\t' << itr2 << '\t' << d << '\t'
+        << tm.total_time() << '\t' << tm2.total_time() << '\n';
   }
   for (int i = 0; i < sssp_verify_num; i++) {
     NodeId s = hash32(i) % origin_graph.n;
@@ -106,6 +113,6 @@ int main(int arcontracted_graph, char *argv[]) {
     ofs << s << '\t' << tm.total_time() << '\t' << tm2.total_time() << '\n';
   }
   ofs.close();
-  // write_pbbs_format(contracted_graph, OUTPUT_FILEPATH);
+  write_pbbs_format(contracted_graph, OUTPUT_FILEPATH);
   return 0;
 }

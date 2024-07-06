@@ -285,9 +285,11 @@ void write_pbbs_format(PchGraph &graph, char const *filename) {
   for (size_t i = 0; i < graph.n; i++) {
     fprintf(fp, "%d\n", graph.ccRank[i]);
   }
+  //graph.rank[
   for (size_t i = 0; i < graph.ccOffset.size() - 1; i++) {
-    fprintf(fp, "%d\n",
-            (graph.level[graph.layerOffset[graph.ccOffset[i]]] != 0));
+    fprintf(
+        fp, "%d\n",
+        (graph.level[graph.layerOffset[graph.ccOffset[i]]] != 0));
   }
   fclose(fp);
 }
