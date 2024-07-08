@@ -126,6 +126,9 @@ pair<EdgeTy, int> PchQuery::stQuery(NodeId s, NodeId t) {
   pq.push({dist[t_d], t_d});
   EdgeTy ans = DIST_MAX;
   int itr = 0;
+  int nodes_in_ch = 0;
+  if (GC.level[s] != 0) nodes_in_ch++;
+  if (GC.level[t] != 0) nodes_in_ch++;
 
   while (!pq.empty()) {
     auto [d, u_d] = pq.top();
@@ -133,12 +136,16 @@ pair<EdgeTy, int> PchQuery::stQuery(NodeId s, NodeId t) {
     if (d != dist[u_d]) {
       continue;
     }
+    if (nodes_in_ch == 0 && 2 * d >= ans) {
+      break;
+    }
     if (d >= ans) {
       break;
     }
     itr++;
     NodeId u = u_d >> 1, dir = u_d & 1;
     if (GC.level[u] != 0) {
+      nodes_in_ch--;
       const auto &in_offset = dir ? GC.offset : GC.in_offset;
       const auto &in_E = dir ? GC.E : GC.in_E;
       bool stall = false;
@@ -155,6 +162,8 @@ pair<EdgeTy, int> PchQuery::stQuery(NodeId s, NodeId t) {
       if (stall) {
         continue;
       }
+    } else {
+      if (d * 2 >= ans) continue;
     }
     const auto &out_offset = dir ? GC.in_offset : GC.offset;
     const auto &out_E = dir ? GC.in_E : GC.E;
@@ -164,6 +173,7 @@ pair<EdgeTy, int> PchQuery::stQuery(NodeId s, NodeId t) {
       if (timestamp[v_d] != current_timestamp) {
         timestamp[v_d] = current_timestamp;
         dist[v_d] = DIST_MAX;
+        if (GC.level[out_E[i].v] != 0) nodes_in_ch++;
       }
       if (dist[v_d] > d + w) {
         dist[v_d] = d + w;
@@ -172,6 +182,9 @@ pair<EdgeTy, int> PchQuery::stQuery(NodeId s, NodeId t) {
         }
         if (timestamp[v_d ^ 1] == current_timestamp) {
           ans = min(ans, dist[v_d] + dist[v_d ^ 1]);
+        }
+        if (GC.level[out_E[i].v] == 0 && dist[v_d] * 2 >= ans) {
+          continue;
         }
         // TODO: terminate at dist[v_d]*2 >= ans for uncontractable graph
         pq.push({dist[v_d], v_d});
