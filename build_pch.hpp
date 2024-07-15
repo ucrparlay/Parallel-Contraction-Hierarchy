@@ -1048,71 +1048,70 @@ void PCH::buildContractionHierarchy() {
     // printf("before contracting\n");
     checkDegree();
     // printf("before contracting checked\n");
-    parallel_for(0, overlay_vertices.size(), [&](size_t i) {
-      NodeId u = overlay_vertices[i];
-      if (edge_diff[u] <= g_upper_score_bound) {
-        if (eligibleForRemoval(u)) {
-          // printf("Node %u eligible\n", u);
-          assert(vertices_contracted_tmp[u] == false);
-          vertices_contract_order[u] = g_tot_level;
-          NodeId in_idx[in_degree[u]];
-          NodeId in_hop[in_degree[u]];
-          EdgeTy in_wgh[in_degree[u]];
-          NodeId out_idx[out_degree[u]];
-          NodeId out_hop[out_degree[u]];
-          EdgeTy out_wgh[out_degree[u]];
-          transfer_neighbors(u, in_idx, in_hop, in_wgh, false);
-          transfer_neighbors(u, out_idx, out_hop, out_wgh, true);
-          for (NodeId k1 = 0; k1 < in_degree[u]; ++k1) {
-            assert(u != in_idx[k1]);
-            for (NodeId k2 = 0; k2 < out_degree[u]; ++k2) {
-              assert(u != out_idx[k2]);
-              if (in_idx[k1] != out_idx[k2]) {
-                pair<NodeId, NodeId> nw = make_pair(in_idx[k1], out_idx[k2]);
-                EdgeTy tentative_dist = vertices_around_hash.find(nw);
-                if (tentative_dist >= in_wgh[k1] + out_wgh[k2]) {
-                  insertHelper(
-                      in_idx[k1], out_idx[k2], in_wgh[k1] + out_wgh[k2],
-                      in_hop[k1] + out_hop[k2], in_degree_tmp, out_degree_tmp);
-                }
-              }
-            }
-          }
-          for (NodeId k1 = 0; k1 < in_degree[u]; ++k1) {
-            assert(u != in_idx[k1]);
-            assert(vertices_contracted[in_idx[k1]] == false);
-
-            pair<NodeId, NodeId> nw = make_pair(in_idx[k1], u);
+    auto contracting_vertices = filter(overlay_vertices, [&](NodeId u) {
+      return edge_diff[u] <= g_upper_score_bound && eligibleForRemoval(u);
+    });
+    parallel_for(0, contracting_vertices.size(), [&](size_t i) {
+      NodeId u = contracting_vertices[i];
+      // printf("Node %u eligible\n", u);
+      assert(vertices_contracted_tmp[u] == false);
+      vertices_contract_order[u] = g_tot_level;
+      NodeId in_idx[in_degree[u]];
+      NodeId in_hop[in_degree[u]];
+      EdgeTy in_wgh[in_degree[u]];
+      NodeId out_idx[out_degree[u]];
+      NodeId out_hop[out_degree[u]];
+      EdgeTy out_wgh[out_degree[u]];
+      transfer_neighbors(u, in_idx, in_hop, in_wgh, false);
+      transfer_neighbors(u, out_idx, out_hop, out_wgh, true);
+      for (NodeId k1 = 0; k1 < in_degree[u]; ++k1) {
+        assert(u != in_idx[k1]);
+        for (NodeId k2 = 0; k2 < out_degree[u]; ++k2) {
+          assert(u != out_idx[k2]);
+          if (in_idx[k1] != out_idx[k2]) {
+            pair<NodeId, NodeId> nw = make_pair(in_idx[k1], out_idx[k2]);
             EdgeTy tentative_dist = vertices_around_hash.find(nw);
-            if (tentative_dist >= in_wgh[k1]) {
-              backward_edges_in_ch_hash.insert(
-                  u, make_pair(in_idx[k1], in_wgh[k1]), in_hop[k1]);
-              write_max(&G.level[in_idx[k1]], G.level[u] + 1, std::less<int>());
-              write_add(&removed_neighbor_num[in_idx[k1]], 1);
-            } else {
-              write_add(&in_degree_tmp[u], -1);
+            if (tentative_dist >= in_wgh[k1] + out_wgh[k2]) {
+              insertHelper(
+                  in_idx[k1], out_idx[k2], in_wgh[k1] + out_wgh[k2],
+                  in_hop[k1] + out_hop[k2], in_degree_tmp, out_degree_tmp);
             }
-            write_add(&out_degree_tmp[in_idx[k1]], -1);
           }
-          for (NodeId k1 = 0; k1 < out_degree[u]; ++k1) {
-            assert(u != out_idx[k1]);
-            assert(vertices_contracted[out_idx[k1]] == false);
-            pair<NodeId, NodeId> nw = make_pair(u, out_idx[k1]);
-            EdgeTy tentative_dist = vertices_around_hash.find(nw);
-            if (tentative_dist >= out_wgh[k1]) {
-              forward_edges_in_ch_hash.insert(
-                  u, make_pair(out_idx[k1], out_wgh[k1]), out_hop[k1]);
-              write_max(&G.level[out_idx[k1]], G.level[u] + 1,
-                        std::less<int>());
-              write_add(&removed_neighbor_num[out_idx[k1]], 1);
-            } else {
-              write_add(&out_degree_tmp[u], -1);
-            }
-            write_add(&in_degree_tmp[out_idx[k1]], -1);
-          }
-          vertices_contracted_tmp[u] = true;
         }
       }
+      for (NodeId k1 = 0; k1 < in_degree[u]; ++k1) {
+        assert(u != in_idx[k1]);
+        assert(vertices_contracted[in_idx[k1]] == false);
+
+        pair<NodeId, NodeId> nw = make_pair(in_idx[k1], u);
+        EdgeTy tentative_dist = vertices_around_hash.find(nw);
+        if (tentative_dist >= in_wgh[k1]) {
+          backward_edges_in_ch_hash.insert(
+              u, make_pair(in_idx[k1], in_wgh[k1]), in_hop[k1]);
+          write_max(&G.level[in_idx[k1]], G.level[u] + 1, std::less<int>());
+          write_add(&removed_neighbor_num[in_idx[k1]], 1);
+        } else {
+          write_add(&in_degree_tmp[u], -1);
+        }
+        write_add(&out_degree_tmp[in_idx[k1]], -1);
+      }
+      for (NodeId k1 = 0; k1 < out_degree[u]; ++k1) {
+        assert(u != out_idx[k1]);
+        assert(vertices_contracted[out_idx[k1]] == false);
+        pair<NodeId, NodeId> nw = make_pair(u, out_idx[k1]);
+        EdgeTy tentative_dist = vertices_around_hash.find(nw);
+        if (tentative_dist >= out_wgh[k1]) {
+          forward_edges_in_ch_hash.insert(
+              u, make_pair(out_idx[k1], out_wgh[k1]), out_hop[k1]);
+          write_max(&G.level[out_idx[k1]], G.level[u] + 1,
+                    std::less<int>());
+          write_add(&removed_neighbor_num[out_idx[k1]], 1);
+        } else {
+          write_add(&out_degree_tmp[u], -1);
+        }
+        write_add(&in_degree_tmp[out_idx[k1]], -1);
+      }
+      vertices_contracted_tmp[u] = true;
     });
     t_contract.stop();
     // cerr << "Contraction" << endl;
