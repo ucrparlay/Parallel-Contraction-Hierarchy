@@ -19,11 +19,13 @@ int main(int arcontracted_graph, char *argv[]) {
   int sssp_verify_num = 100;
   NodeId degree_bound = 0;
   bool degree_bounded = false;
+  double sample_bound = 0.05;
   if (arcontracted_graph > 3) max_pop_count = atol(argv[3]);
   if (arcontracted_graph > 4) bidirect_verify_num = atol(argv[4]);
   if (arcontracted_graph > 5) sssp_verify_num = atol(argv[5]);
-  if (arcontracted_graph > 6) {
-    degree_bound = atol(argv[6]);
+  if (arcontracted_graph > 6) sample_bound = atof(argv[6]);
+  if (arcontracted_graph > 7) {
+    degree_bound = atol(argv[7]);
     degree_bounded = true;
   }
 
@@ -66,7 +68,7 @@ int main(int arcontracted_graph, char *argv[]) {
 
   Graph origin_graph = read_graph(INPUT_FILEPATH);
   PCH *solver =
-      new PCH(origin_graph, max_pop_count, degree_bounded, degree_bound);
+      new PCH(origin_graph, max_pop_count, degree_bounded, degree_bound, sample_bound);
   PchGraph contracted_graph = solver->createContractionHierarchy();
   delete (solver);
   PchQuery query(contracted_graph, origin_graph);

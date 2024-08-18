@@ -24,6 +24,7 @@ struct PCH {
   NodeId g_max_pop_count;
   NodeId g_tot_level = 0;
   double g_upper_score_bound = 0;
+  double g_sample_bound = 0;
   sequence<NodeId> overlay_vertices;
   sequence<NodeId> vertices_need_score_update;
   sequence<bool> vertices_settled;
@@ -81,10 +82,11 @@ struct PCH {
   PchGraph GC;
   PchGraph createContractionHierarchy();
   PCH(Graph &_G_in, int _max_pop_count = 500, bool _degree_ordering = false,
-      NodeId _g_degree_bound = 30)
+      NodeId _g_degree_bound = 30, double _g_sample_bound = 0.05)
       : degree_ordering(_degree_ordering),
         g_degree_bound(_g_degree_bound),
         g_max_pop_count(_max_pop_count),
+        g_sample_bound(_g_sample_bound),
         removed_neighbor_num(_G_in.n),
         out_degree(_G_in.n),
         in_degree(_G_in.n),
@@ -598,7 +600,8 @@ double PCH::sampleUpperBound() {
   sort(sample_edge_diff, sample_edge_diff + EDGEDIFF_SAMPLES + 1);
   // cout << sample_edge_diff[0] << "\t" << sample_edge_diff[10] << "\t"
   //      << sample_edge_diff[100] << endl;
-  int id = EDGEDIFF_SAMPLES * 0.05;
+  if(g_sample_bound==1.0)return std::numeric_limits<double>::max();
+  int id = EDGEDIFF_SAMPLES * g_sample_bound;
   return sample_edge_diff[id];
 }
 
@@ -935,6 +938,7 @@ bool check_full(hash_map2<NodeId, NodeId, EdgeTy> &vertices_around_hash,
 
 void PCH::buildContractionHierarchy() {
   parlay::internal::timer t_contract, t_prune, t_clip, t_score, t_reset;
+  // double prev_contract=0, prev_prune=0, prev_clip=0, prev_score=0, prev_reset=0;
   t_contract.reset(), t_prune.reset(), t_clip.reset(), t_score.reset(),
       t_reset.reset();
   // bool continue_contraction_process = true;
@@ -949,6 +953,7 @@ void PCH::buildContractionHierarchy() {
   // int itr = 0;
   bool end_status = false;
   cout << "Overlay vertices number: " << overlay_vertices.size() << endl;
+  ofstream ofs("pch.tsv", ios::app);
   while (overlay_vertices.size() != 0) {
     // cerr << "itr: " << itr++ << endl;
     if (check_full(vertices_around_hash, g_tot_level)) {
@@ -1140,11 +1145,26 @@ void PCH::buildContractionHierarchy() {
         parlay::filter(overlay_vertices,
                        [&](NodeId v) { return vertices_settled[v] == false; });
     t_reset.stop();
-    cout << "Overlay vertices number: " << overlay_vertices.size() << endl;
-    // cerr << "reset" << endl;
+    // cout<<"Contract "<<contracting_vertices.size()<<" vertices\n";
+    // ofs<<contracting_vertices.size()<<"\t";
+    // EdgeId tot_edge = 0;
+    // for(NodeId nid = 0;nid<overlay_vertices.size();nid++){
+    //   tot_edge+=in_degree[overlay_vertices[nid]];
+    //   tot_edge+=out_degree[overlay_vertices[nid]];
+    // }
+    // cout<<"Update "<<vertices_need_score_update.size()<<" vertices\n";
+    // ofs<<vertices_need_score_update.size()<<"\t";
+    // cout << "Overlay vertices number: " << overlay_vertices.size() << endl;
+    // cout << "Overlay edges number: " << tot_edge << endl;
+    // if(overlay_vertices.size()!=0)ofs<<overlay_vertices.size()<<"\t"<<tot_edge<<"\t"<<(double)tot_edge/(double)overlay_vertices.size()<<"\t";
+    // else ofs<<overlay_vertices.size()<<"\t"<<tot_edge<<"\t"<<0<<"\t";
+    // ofs << t_reset.total_time()-prev_reset << '\t' << t_prune.total_time()-prev_prune << '\t'
+    //     << t_contract.total_time()-prev_contract << '\t' << t_clip.total_time()-prev_clip << '\t'
+    //     << t_score.total_time()-prev_score << '\n';
+    // prev_contract=t_contract.total_time(), prev_prune=t_prune.total_time(), prev_clip=t_clip.total_time(), prev_score=t_score.total_time(), prev_reset=t_reset.total_time();
   }
 
-  ofstream ofs("pch.tsv", ios::app);
+  // ofstream ofs("pch.tsv", ios::app);
   ofs << t_reset.total_time() << '\t' << t_prune.total_time() << '\t'
       << t_contract.total_time() << '\t' << t_clip.total_time() << '\t'
       << t_score.total_time() << '\n';
