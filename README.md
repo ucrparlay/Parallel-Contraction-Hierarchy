@@ -35,7 +35,7 @@ make
 ./build_pch [-i input_file_path] [-o output_file_path] [-p max_pop_count] [-s selection_fraction] [-t st_query_verify_num] [-q sssp_query_verify_num] [-d print_details] 
 ```
 Options: 
-* `-i <input_file_path>`: (Required) the path to the input file containing graph data.
+* `-i <input_file_path>`: (Required) the path to the input file containing graph data. Feasible graphs can be found [here.](https://pasgal-bs.cs.ucr.edu/)
 * `-o <output_file_path>`: the path to save the output results.
 * `-p <max_pop_count>`: the maximum number of vertices to settle during the local search phase. Higher values may improve accuracy at the cost of runtime.
 * `-s <selection_fraction>`: the fraction of feasible vertices to be contracted in each round. For example, 0.1 selects 10% of feasible vertices.
