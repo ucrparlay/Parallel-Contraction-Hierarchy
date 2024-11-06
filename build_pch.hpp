@@ -16,7 +16,14 @@ char *INPUT_FILEPATH = nullptr;
 char *OUTPUT_FILEPATH = nullptr;
 
 #define EDGEDIFF_SAMPLES 150
-
+struct Node {
+  EdgeId out_degree;
+  EdgeId in_degree;
+  NodeId removed_neighbor_num;
+  double edge_diff;
+  bool vertices_settled;
+  bool vertices_contracted;
+};
 struct PCH {
  private:
   bool degree_ordering;
@@ -25,18 +32,12 @@ struct PCH {
   NodeId g_tot_level = 0;
   double g_upper_score_bound = 0;
   double g_sample_bound = 0;
+  bool early_stop = false;
+  sequence<Node> info;
   sequence<NodeId> overlay_vertices;
   sequence<NodeId> vertices_need_score_update;
-  sequence<bool> vertices_settled;
-  sequence<bool> vertices_contracted;
   sequence<NodeId> vertices_contract_order;
-  sequence<NodeId> removed_neighbor_num;
-
-  sequence<EdgeId> out_degree;  // number of out edges
-  sequence<EdgeId> in_degree;   // number of in edges
   sequence<size_t> priority;
-
-  sequence<double> edge_diff;
 
   hash_map<NodeId, NodeId, EdgeTy> forward_edges_in_ch_hash;
   hash_map<NodeId, NodeId, EdgeTy> backward_edges_in_ch_hash;
@@ -62,7 +63,7 @@ struct PCH {
   void calDisToVerticesAround();
   double sampleUpperBound();
   bool eligibleForRemoval(NodeId s);
-  void pruneNeighbors(NodeId s, bool early_stop);
+  void pruneNeighbors(NodeId s);
   bool calScore();
   bool insertHelper(NodeId left, NodeId right, EdgeTy len, NodeId hop);
   void reorderByLayerAndCC(sequence<pair<NodeId, NodeId>> &node_and_ids);
@@ -80,20 +81,18 @@ struct PCH {
   bool print_detail;
   PchGraph createContractionHierarchy();
   PCH(Graph &_G_in, int _max_pop_count = 500, bool _degree_ordering = false,
-      NodeId _g_degree_bound = 30, double _g_sample_bound = 0.05, bool _print_detail = false)
+      NodeId _g_degree_bound = 30, double _g_sample_bound = 0.05,
+      bool _print_detail = false)
       : degree_ordering(_degree_ordering),
         g_degree_bound(_g_degree_bound),
         g_max_pop_count(_max_pop_count),
         g_sample_bound(_g_sample_bound),
-        removed_neighbor_num(_G_in.n),
-        out_degree(_G_in.n),
-        in_degree(_G_in.n),
+        info(_G_in.n),
         priority(_G_in.n),
-        edge_diff(_G_in.n),
         forward_edges_in_ch_hash(2 * _G_in.m),
         backward_edges_in_ch_hash(2 * _G_in.m),
-        newly_inserted_out_edges_hash(_G_in.m),
-        newly_inserted_in_edges_hash(_G_in.m),
+        newly_inserted_out_edges_hash(0.5 * _G_in.m),
+        newly_inserted_in_edges_hash(0.5 * _G_in.m),
         vertices_around_hash(20 * _G_in.m),
         bag(5 * _G_in.n),
         neighbors(5 * _G_in.n),
@@ -103,7 +102,7 @@ struct PCH {
 
 bool PCH::check_edge_valid([[maybe_unused]] size_t idx, NodeId v, bool in_csr) {
   if (in_csr) {
-    if (vertices_contracted[v]) return false;
+    if (info[v].vertices_contracted) return false;
     return true;
   }
   return false;
@@ -117,7 +116,7 @@ EdgeId PCH::clip_from_hash(sequence<Edge> &E,
     if (hashMap.H[index].valid) {
       if (hashMap.H[index].key == UINT_N_MAX) break;
       if (hashMap.H[index].key == nd) {
-        if (!judge || !vertices_contracted[hashMap.H[index].value.first]) {
+        if (!judge || !info[hashMap.H[index].value.first].vertices_contracted) {
           E[off].v = hashMap.H[index].value.first;
           E[off].w = hashMap.H[index].value.second;
           E[off].hop = hashMap.H[index].hop;
@@ -141,10 +140,10 @@ void PCH::initialize() {
   overlay_vertices = sequence<NodeId>(G.n);
   parallel_for(0, G.n, [&](size_t i) {
     overlay_vertices[i] = i;
-    out_degree[i] = G.offset[i + 1] - G.offset[i];
-    in_degree[i] = G.in_offset[i + 1] - G.in_offset[i];
+    info[i].out_degree = G.offset[i + 1] - G.offset[i];
+    info[i].in_degree = G.in_offset[i + 1] - G.in_offset[i];
     priority[i] = i + 1;
-    removed_neighbor_num[i] = 0;
+    info[i].removed_neighbor_num = 0;
   });
   priority = parlay::random_shuffle(priority);
 }
@@ -222,16 +221,16 @@ void PCH::preprocess(bool remove_self_loops_and_parallel_edges = true) {
   return;
 }
 
-void PCH::pruneNeighbors(NodeId s, bool early_stop) {
+void PCH::pruneNeighbors(NodeId s) {
   if (degree_ordering) {
-    if (in_degree[s] + out_degree[s] >= g_degree_bound) {
+    if (info[s].in_degree + info[s].out_degree >= g_degree_bound) {
       unsigned long index = newly_inserted_out_edges_hash.first_index(s);
       while (true) {
         if (newly_inserted_out_edges_hash.H[index].key == UINT_N_MAX) break;
         if (newly_inserted_out_edges_hash.H[index].valid) {
           if (newly_inserted_out_edges_hash.H[index].key == s &&
-              !vertices_contracted[newly_inserted_out_edges_hash.H[index]
-                                       .value.first]) {
+              !info[newly_inserted_out_edges_hash.H[index].value.first]
+                   .vertices_contracted) {
             NodeId v = newly_inserted_out_edges_hash.H[index].value.first;
             EdgeTy d = newly_inserted_out_edges_hash.H[index].value.second;
             if (!newly_inserted_out_edges_hash.H[index].settled) {
@@ -240,7 +239,7 @@ void PCH::pruneNeighbors(NodeId s, bool early_stop) {
               EdgeTy tentative_dist = vertices_around_hash.find(nw);
               if (tentative_dist < d) {
                 newly_inserted_out_edges_hash.H[index].valid = false;
-                write_add(&out_degree[s], -1);
+                write_add(&info[s].out_degree, -1);
               }
             }
           }
@@ -260,7 +259,7 @@ void PCH::pruneNeighbors(NodeId s, bool early_stop) {
 
   for (size_t i = G.offset[s]; i < G.offset[s + 1]; i++) {
     NodeId v = G.E[i].v;
-    if (vertices_contracted[v]) continue;
+    if (info[v].vertices_contracted) continue;
     dist[v] = G.E[i].w;
     pq.push({dist[v], v});
     if (!early_stop) {
@@ -274,8 +273,8 @@ void PCH::pruneNeighbors(NodeId s, bool early_stop) {
     if (newly_inserted_out_edges_hash.H[index].key == UINT_N_MAX) break;
     if (newly_inserted_out_edges_hash.H[index].valid) {
       if (newly_inserted_out_edges_hash.H[index].key == s &&
-          !vertices_contracted[newly_inserted_out_edges_hash.H[index]
-                                   .value.first]) {
+          !info[newly_inserted_out_edges_hash.H[index].value.first]
+               .vertices_contracted) {
         NodeId v = newly_inserted_out_edges_hash.H[index].value.first;
         dist[v] = newly_inserted_out_edges_hash.H[index].value.second;
         pq.push({dist[v], v});
@@ -289,7 +288,7 @@ void PCH::pruneNeighbors(NodeId s, bool early_stop) {
           if (tentative_dist < dist[v]) {
             newly_inserted_out_edges_hash.H[index].settled = true;
             newly_inserted_out_edges_hash.H[index].valid = false;
-            write_add(&out_degree[s], -1);
+            write_add(&info[s].out_degree, -1);
             // TODO: sync to in_degree
           } else {
             if (bound < dist[v]) bound = dist[v];
@@ -311,7 +310,7 @@ void PCH::pruneNeighbors(NodeId s, bool early_stop) {
     if (dist[u] < d) continue;
     itr++;
     if (degree_ordering) {
-      if (in_degree[u] + out_degree[u] >= g_degree_bound) {
+      if (info[u].in_degree + info[u].out_degree >= g_degree_bound) {
         continue;
       }
     }
@@ -326,7 +325,7 @@ void PCH::pruneNeighbors(NodeId s, bool early_stop) {
     }
     for (NodeId i = G.offset[u]; i < G.offset[u + 1]; ++i) {
       NodeId v = G.E[i].v;
-      if (s == v || vertices_contracted[v]) continue;
+      if (s == v || info[v].vertices_contracted) continue;
       EdgeTy ne = d + G.E[i].w;
       if (dist.find(v) == dist.end() || dist[v] > ne) {
         dist[v] = ne;
@@ -342,8 +341,8 @@ void PCH::pruneNeighbors(NodeId s, bool early_stop) {
       if (newly_inserted_out_edges_hash.H[index].valid) {
         if (newly_inserted_out_edges_hash.H[index].key == UINT_N_MAX) break;
         if (newly_inserted_out_edges_hash.H[index].key == u &&
-            !vertices_contracted[newly_inserted_out_edges_hash.H[index]
-                                     .value.first]) {
+            !info[newly_inserted_out_edges_hash.H[index].value.first]
+                 .vertices_contracted) {
           NodeId v = newly_inserted_out_edges_hash.H[index].value.first;
           if (s == v) {
             index = newly_inserted_out_edges_hash.next_index(index);
@@ -368,8 +367,8 @@ void PCH::pruneNeighbors(NodeId s, bool early_stop) {
     if (newly_inserted_out_edges_hash.H[index].key == UINT_N_MAX) break;
     if (newly_inserted_out_edges_hash.H[index].valid) {
       if (newly_inserted_out_edges_hash.H[index].key == s &&
-          !vertices_contracted[newly_inserted_out_edges_hash.H[index]
-                                   .value.first]) {
+          !info[newly_inserted_out_edges_hash.H[index].value.first]
+               .vertices_contracted) {
         NodeId v = newly_inserted_out_edges_hash.H[index].value.first;
         if (!newly_inserted_out_edges_hash.H[index].settled) {
           newly_inserted_out_edges_hash.H[index].settled = true;
@@ -377,7 +376,7 @@ void PCH::pruneNeighbors(NodeId s, bool early_stop) {
                  dist[v]);
           if (newly_inserted_out_edges_hash.H[index].value.second != dist[v]) {
             newly_inserted_out_edges_hash.H[index].valid = false;
-            write_add(&out_degree[s], -1);
+            write_add(&info[s].out_degree, -1);
           }
         }
       }
@@ -390,20 +389,20 @@ bool PCH::calScore() {
   parallel_for(0, vertices_need_score_update.size(), [&](size_t i) {
     NodeId u = vertices_need_score_update[i];
     if (degree_ordering) {
-      if (in_degree[u] + out_degree[u] >= g_degree_bound) {
+      if (info[u].in_degree + info[u].out_degree >= g_degree_bound) {
         return;
       }
     }
-    NodeId in_idx[in_degree[u]];
-    NodeId in_hop[in_degree[u]];
-    EdgeTy in_wgh[in_degree[u]];
-    NodeId out_idx[out_degree[u]];
-    NodeId out_hop[out_degree[u]];
-    EdgeTy out_wgh[out_degree[u]];
+    NodeId in_idx[info[u].in_degree];
+    NodeId in_hop[info[u].in_degree];
+    EdgeTy in_wgh[info[u].in_degree];
+    NodeId out_idx[info[u].out_degree];
+    NodeId out_hop[info[u].out_degree];
+    EdgeTy out_wgh[info[u].out_degree];
     transfer_neighbors(u, in_idx, in_hop, in_wgh, false);
     transfer_neighbors(u, out_idx, out_hop, out_wgh, true);
-    for (NodeId k1 = 0; k1 < in_degree[u]; ++k1) {
-      for (NodeId k2 = 0; k2 < out_degree[u]; ++k2) {
+    for (NodeId k1 = 0; k1 < info[u].in_degree; ++k1) {
+      for (NodeId k2 = 0; k2 < info[u].out_degree; ++k2) {
         if (in_idx[k1] != out_idx[k2]) {
           pair<NodeId, NodeId> nw = make_pair(in_idx[k1], out_idx[k2]);
           if (vertices_around_hash.find(nw) > in_wgh[k1] + out_wgh[k2]) {
@@ -416,31 +415,31 @@ bool PCH::calScore() {
   parallel_for(0, vertices_need_score_update.size(), [&](size_t i) {
     NodeId u = vertices_need_score_update[i];
     if (degree_ordering) {
-      if (in_degree[u] + out_degree[u] >= g_degree_bound) {
-        edge_diff[u] = INT_MAX;
+      if (info[u].in_degree + info[u].out_degree >= g_degree_bound) {
+        info[u].edge_diff = INT_MAX;
         return;
       }
     }
-    if (in_degree[u] == 0 || out_degree[u] == 0) {
-      edge_diff[u] = 0;
+    if (info[u].in_degree == 0 || info[u].out_degree == 0) {
+      info[u].edge_diff = 0;
     } else {
-      NodeId in_idx[in_degree[u]];
-      NodeId in_hop[in_degree[u]];
-      EdgeTy in_wgh[in_degree[u]];
-      NodeId out_idx[out_degree[u]];
-      NodeId out_hop[out_degree[u]];
-      EdgeTy out_wgh[out_degree[u]];
+      NodeId in_idx[info[u].in_degree];
+      NodeId in_hop[info[u].in_degree];
+      EdgeTy in_wgh[info[u].in_degree];
+      NodeId out_idx[info[u].out_degree];
+      NodeId out_hop[info[u].out_degree];
+      EdgeTy out_wgh[info[u].out_degree];
       transfer_neighbors(u, in_idx, in_hop, in_wgh, false);
       transfer_neighbors(u, out_idx, out_hop, out_wgh, true);
-      EdgeId removed_arc_num = 1 + in_degree[u] + out_degree[u],
+      EdgeId removed_arc_num = 1 + info[u].in_degree + info[u].out_degree,
              added_arc_num = 0;
       NodeId removed_hop_count = 1, added_hop_count = 0;
-      for (NodeId k1 = 0; k1 < in_degree[u]; ++k1)
+      for (NodeId k1 = 0; k1 < info[u].in_degree; ++k1)
         removed_hop_count += in_hop[k1];
-      for (NodeId k1 = 0; k1 < out_degree[u]; ++k1)
+      for (NodeId k1 = 0; k1 < info[u].out_degree; ++k1)
         removed_hop_count += out_hop[k1];
-      for (NodeId k1 = 0; k1 < in_degree[u]; ++k1) {
-        for (NodeId k2 = 0; k2 < out_degree[u]; ++k2) {
+      for (NodeId k1 = 0; k1 < info[u].in_degree; ++k1) {
+        for (NodeId k2 = 0; k2 < info[u].out_degree; ++k2) {
           if (in_idx[k1] != out_idx[k2]) {
             pair<NodeId, NodeId> nw = make_pair(in_idx[k1], out_idx[k2]);
             assert(vertices_around_hash.find(nw) <= in_wgh[k1] + out_wgh[k2]);
@@ -452,12 +451,12 @@ bool PCH::calScore() {
           }
         }
       }
-      // edge_diff[u] = 1 + 1000 * G.level[u] +
+      // info[u].edge_diff = 1 + 1000 * G.level[u] +
       //                (1000 * added_arc_num) / removed_arc_num +
       //                (1000 * added_hop_count) / removed_hop_count;
-      edge_diff[u] =
+      info[u].edge_diff =
           1 + 500 * G.level[u] +
-          1000 * (double)(added_arc_num + 0.2 * removed_neighbor_num[u]) /
+          1000 * (double)(added_arc_num + 0.2 * info[u].removed_neighbor_num) /
               removed_arc_num +
           1000 * (double)added_hop_count / removed_hop_count +
           10 * (removed_arc_num);
@@ -467,10 +466,11 @@ bool PCH::calScore() {
 }
 
 void PCH::calDisToVerticesAround() {
-  NodeId n = vertices_need_score_update.size();
-  parallel_for(0, n, [&](NodeId i) {
-    pruneNeighbors(vertices_need_score_update[i], (g_tot_level != 0));
-  });
+  // NodeId n = vertices_need_score_update.size();
+  // parallel_for(0, n, [&](NodeId i) {
+  // pruneNeighbors(vertices_need_score_update[i]); });
+  NodeId n = overlay_vertices.size();
+  parallel_for(0, n, [&](NodeId i) { pruneNeighbors(overlay_vertices[i]); });
   size_t n2 = bag.pack_into(make_slice(neighbors));
   assert(n2 < neighbors.size());
   parallel_for(0, n2, [&](size_t i) {
@@ -486,7 +486,7 @@ void PCH::calDisToVerticesAround() {
            newly_inserted_in_edges_hash.H[idx_right].value.second);
     if (!newly_inserted_out_edges_hash.H[idx_left].valid) {
       if (CAS(&newly_inserted_in_edges_hash.H[idx_right].valid, true, false)) {
-        write_add(&in_degree[key_right], -1);
+        write_add(&info[key_right].in_degree, -1);
       }
     }
   });
@@ -524,24 +524,18 @@ bool PCH::iterateHashTable(NodeId u, F f) {
 bool PCH::eligibleForRemoval(NodeId s) {
   auto canRemove = [&](NodeId u, NodeId v) {
     // cerr << "Judge: " << u << ": " << v;
-    if (vertices_contracted[v] || edge_diff[v] > g_upper_score_bound) {
+    if (info[v].vertices_contracted ||
+        info[v].edge_diff > g_upper_score_bound) {
       // cerr << " contracted" << endl;
       return true;
     }
 
-    // if (edge_diff[v] <= g_upper_score_bound) {
-    //   if (edge_diff[v] == edge_diff[u]) {
-    //     return priority[v] < priority[u];
-    //   }
-    //   return edge_diff[v] > edge_diff[u];
-    // } else {
-    //   return true;
-    // }
-
-    if ((edge_diff[v] < edge_diff[u]) ||
-        (edge_diff[v] == edge_diff[u] &&
-         ((in_degree[v] + out_degree[v]) < (in_degree[u] + out_degree[u]) ||
-          ((in_degree[v] + out_degree[v]) == (in_degree[u] + out_degree[u]) &&
+    if ((info[v].edge_diff < info[u].edge_diff) ||
+        (info[v].edge_diff == info[u].edge_diff &&
+         ((info[v].in_degree + info[v].out_degree) <
+              (info[u].in_degree + info[u].out_degree) ||
+          ((info[v].in_degree + info[v].out_degree) ==
+               (info[u].in_degree + info[u].out_degree) &&
            priority[v] < priority[u])))) {
       // cerr << " False" << endl;
       return false;
@@ -550,7 +544,7 @@ bool PCH::eligibleForRemoval(NodeId s) {
       return true;
     }
   };
-  assert(edge_diff[s] <= g_upper_score_bound);
+  assert(info[s].edge_diff <= g_upper_score_bound);
   // printf("In CSR\n");
   for (size_t i = G.offset[s]; i < G.offset[s + 1]; ++i) {
     // cerr << "Out: ";
@@ -567,12 +561,13 @@ bool PCH::eligibleForRemoval(NodeId s) {
 double PCH::sampleUpperBound() {
   size_t seed = hash32(g_tot_level + 1);
   if (overlay_vertices.size() < EDGEDIFF_SAMPLES)
-    return edge_diff[overlay_vertices[hash32(seed) % overlay_vertices.size()]];
+    return info[overlay_vertices[hash32(seed) % overlay_vertices.size()]]
+        .edge_diff;
   double sample_edge_diff[EDGEDIFF_SAMPLES + 1];
   for (size_t i = 0; i <= EDGEDIFF_SAMPLES; i++) {
     NodeId v = overlay_vertices[hash32(seed + i) % overlay_vertices.size()];
-    assert(!vertices_contracted[v]);
-    sample_edge_diff[i] = edge_diff[v];
+    assert(!info[v].vertices_contracted);
+    sample_edge_diff[i] = info[v].edge_diff;
   }
   sort(sample_edge_diff, sample_edge_diff + EDGEDIFF_SAMPLES + 1);
   if (g_sample_bound == 1.0) return std::numeric_limits<double>::max();
@@ -586,8 +581,8 @@ bool PCH::insertHelper(NodeId left, NodeId right, EdgeTy len, NodeId hop) {
   pair<NodeId, NodeId> nw = make_pair(left, right);
   EdgeTy tentative_dist = vertices_around_hash.find(nw);
   if (tentative_dist < len) return false;
-  vertices_settled[left] = false;
-  vertices_settled[right] = false;
+  info[left].vertices_settled = false;
+  info[right].vertices_settled = false;
   bool replaceFlag1 = false;
   bool replaceFlag2 = false;
 
@@ -612,12 +607,12 @@ bool PCH::insertHelper(NodeId left, NodeId right, EdgeTy len, NodeId hop) {
   pair<bool, NodeId> idx_left =
       newly_inserted_out_edges_hash.insert(left, make_pair(right, len), hop);
   if (idx_left.first) {
-    write_add(&out_degree[left], 1);
+    write_add(&info[left].out_degree, 1);
   }
   pair<bool, NodeId> idx_right =
       newly_inserted_in_edges_hash.insert(right, make_pair(left, len), hop);
   if (idx_right.first) {
-    write_add(&in_degree[right], 1);
+    write_add(&info[right].in_degree, 1);
   }
 
   assert(idx_left.second != UINT_MAX && idx_right.second != UINT_MAX);
@@ -631,11 +626,11 @@ void PCH::transfer_neighbors(NodeId u, NodeId *idx, NodeId *hop, EdgeTy *wgh,
   const sequence<Edge> &E = forward ? G.E : G.in_E;
   const hash_map<NodeId, NodeId, EdgeTy> &edges_hash_map =
       forward ? newly_inserted_out_edges_hash : newly_inserted_in_edges_hash;
-  NodeId degree = forward ? out_degree[u] : in_degree[u];
+  NodeId degree = forward ? info[u].out_degree : info[u].in_degree;
 
   NodeId edge_num = 0;
   for (size_t j = offset[u]; j < offset[u + 1]; ++j) {
-    if (!vertices_contracted[E[j].v]) {
+    if (!info[E[j].v].vertices_contracted) {
       idx[edge_num] = E[j].v;
       wgh[edge_num] = E[j].w;
       hop[edge_num] = E[j].hop;
@@ -648,7 +643,7 @@ void PCH::transfer_neighbors(NodeId u, NodeId *idx, NodeId *hop, EdgeTy *wgh,
       if (edges_hash_map.H[index].valid) {
         if (edges_hash_map.H[index].key == UINT_N_MAX) break;
         if (edges_hash_map.H[index].key == u &&
-            !vertices_contracted[edges_hash_map.H[index].value.first]) {
+            !info[edges_hash_map.H[index].value.first].vertices_contracted) {
           idx[edge_num] = edges_hash_map.H[index].value.first;
           wgh[edge_num] = edges_hash_map.H[index].value.second;
           hop[edge_num] = edges_hash_map.H[index].hop;
@@ -664,14 +659,14 @@ void PCH::transfer_neighbors(NodeId u, NodeId *idx, NodeId *hop, EdgeTy *wgh,
            forward ? "outgoing" : "incoming");
     printf("Neighbors of out CSR: ");
     for (size_t j = G.offset[u]; j < G.offset[u + 1]; ++j) {
-      printf("(%u,%d,%d) ", G.E[j].v, vertices_contracted[G.E[j].v],
-             vertices_contracted[G.E[j].v]);
+      printf("(%u,%d,%d) ", G.E[j].v, info[G.E[j].v].vertices_contracted,
+             info[G.E[j].v].vertices_contracted);
     }
     puts("");
     printf("Neighbors of in CSR: ");
     for (size_t j = G.in_offset[u]; j < G.in_offset[u + 1]; ++j) {
-      printf("(%u,%d,%d) ", G.in_E[j].v, vertices_contracted[G.in_E[j].v],
-             vertices_contracted[G.in_E[j].v]);
+      printf("(%u,%d,%d) ", G.in_E[j].v, info[G.in_E[j].v].vertices_contracted,
+             info[G.in_E[j].v].vertices_contracted);
     }
     puts("");
     printf("Neighbors of out edge hash table: ");
@@ -682,10 +677,10 @@ void PCH::transfer_neighbors(NodeId u, NodeId *idx, NodeId *hop, EdgeTy *wgh,
         if (newly_inserted_out_edges_hash.H[index].key == u) {
           printf("(%u,%d,%d) ",
                  newly_inserted_out_edges_hash.H[index].value.first,
-                 vertices_contracted[newly_inserted_out_edges_hash.H[index]
-                                         .value.first],
-                 vertices_contracted[newly_inserted_out_edges_hash.H[index]
-                                         .value.first]);
+                 info[newly_inserted_out_edges_hash.H[index].value.first]
+                     .vertices_contracted,
+                 info[newly_inserted_out_edges_hash.H[index].value.first]
+                     .vertices_contracted);
         }
       }
       index = newly_inserted_out_edges_hash.next_index(index);
@@ -699,23 +694,24 @@ void PCH::transfer_neighbors(NodeId u, NodeId *idx, NodeId *hop, EdgeTy *wgh,
         if (newly_inserted_in_edges_hash.H[index].key == u) {
           printf("(%u,%d,%d) ",
                  newly_inserted_in_edges_hash.H[index].value.first,
-                 vertices_contracted[newly_inserted_in_edges_hash.H[index]
-                                         .value.first],
-                 vertices_contracted[newly_inserted_in_edges_hash.H[index]
-                                         .value.first]);
+                 info[newly_inserted_in_edges_hash.H[index].value.first]
+                     .vertices_contracted,
+                 info[newly_inserted_in_edges_hash.H[index].value.first]
+                     .vertices_contracted);
         }
       }
       index = newly_inserted_in_edges_hash.next_index(index);
     }
     puts("");
     NodeId v = E[offset[u] + 0].v;
-    cerr << forward << " " << vertices_contracted[u] << " "
-         << vertices_contracted[v] << " " << vertices_contracted[u] << " "
-         << vertices_contracted[v] << endl;
+    cerr << forward << " " << info[u].vertices_contracted << " "
+         << info[v].vertices_contracted << " " << info[u].vertices_contracted
+         << " " << info[v].vertices_contracted << endl;
     cerr << u << " " << v << " " << edge_num << " " << degree << endl;
-    cerr << edge_diff[u] << " " << edge_diff[v] << " " << out_degree[u] << " "
-         << in_degree[u] << " " << out_degree[v] + in_degree[v] << " "
-         << priority[u] << " " << priority[v] << endl;
+    cerr << info[u].edge_diff << " " << info[v].edge_diff << " "
+         << info[u].out_degree << " " << info[u].in_degree << " "
+         << info[v].out_degree + info[v].in_degree << " " << priority[u] << " "
+         << priority[v] << endl;
     assert(edge_num == degree);
   }
   return;
@@ -725,9 +721,9 @@ void PCH::transferHashtoCSR() {
   GC.offset[GC.n] = 0;
   GC.in_offset[GC.n] = 0;
   parallel_for(0, G.n, [&](size_t i) {
-    if (!vertices_contracted[i]) {
-      GC.offset[i] = out_degree[i];
-      GC.in_offset[i] = in_degree[i];
+    if (!info[i].vertices_contracted) {
+      GC.offset[i] = info[i].out_degree;
+      GC.in_offset[i] = info[i].in_degree;
     } else {
       GC.offset[i] = 0;
       GC.in_offset[i] = 0;
@@ -741,10 +737,10 @@ void PCH::transferHashtoCSR() {
   GC.E = sequence<Edge>::uninitialized(GC.m);
   GC.in_E = sequence<Edge>::uninitialized(GC.rm);
   parallel_for(0, G.n, [&](size_t i) {
-    if (!vertices_contracted[i]) {
+    if (!info[i].vertices_contracted) {
       EdgeId bg = GC.offset[i];
       for (EdgeId j = G.offset[i]; j < G.offset[i + 1]; ++j) {
-        if (!vertices_contracted[G.E[j].v]) {
+        if (!info[G.E[j].v].vertices_contracted) {
           GC.E[bg].v = G.E[j].v;
           GC.E[bg].w = G.E[j].w;
           GC.E[bg].hop = G.E[j].hop;
@@ -756,7 +752,7 @@ void PCH::transferHashtoCSR() {
 
       bg = GC.in_offset[i];
       for (EdgeId j = G.in_offset[i]; j < G.in_offset[i + 1]; ++j) {
-        if (!vertices_contracted[G.in_E[j].v]) {
+        if (!info[G.in_E[j].v].vertices_contracted) {
           GC.in_E[bg].v = G.in_E[j].v;
           GC.in_E[bg].w = G.in_E[j].w;
           GC.in_E[bg].hop = G.in_E[j].hop;
@@ -783,7 +779,7 @@ void PCH::checkDegree() {
 #ifdef DEBUG
   parallel_for(0, overlay_vertices.size(), [&](size_t nd) {
     NodeId u = overlay_vertices[nd];
-    if (vertices_contracted[u]) {
+    if (info[u].vertices_contracted) {
       return;
     }
     size_t in_d = 0, out_d = 0;
@@ -791,7 +787,7 @@ void PCH::checkDegree() {
     // out_degree
     for (size_t j = G.offset[u]; j < G.offset[u + 1]; j++) {
       NodeId v = G.E[j].v;
-      if (!vertices_contracted[v]) {
+      if (!info[v].vertices_contracted) {
         out_d++;
       }
     }
@@ -801,7 +797,7 @@ void PCH::checkDegree() {
         if (newly_inserted_out_edges_hash.H[index].key == UINT_N_MAX) break;
         if (newly_inserted_out_edges_hash.H[index].key == u) {
           NodeId v = newly_inserted_out_edges_hash.H[index].value.first;
-          if (!vertices_contracted[v]) {
+          if (!info[v].vertices_contracted) {
             out_d++;
           }
         }
@@ -812,7 +808,7 @@ void PCH::checkDegree() {
     // in_degree
     for (size_t j = G.in_offset[u]; j < G.in_offset[u + 1]; j++) {
       NodeId v = G.in_E[j].v;
-      if (!vertices_contracted[v]) {
+      if (!info[v].vertices_contracted) {
         in_d++;
       }
     }
@@ -822,22 +818,22 @@ void PCH::checkDegree() {
         if (newly_inserted_in_edges_hash.H[index].key == UINT_N_MAX) break;
         if (newly_inserted_in_edges_hash.H[index].key == u) {
           NodeId v = newly_inserted_in_edges_hash.H[index].value.first;
-          if (!vertices_contracted[v]) {
+          if (!info[v].vertices_contracted) {
             in_d++;
           }
         }
       }
       index = newly_inserted_in_edges_hash.next_index(index);
     }
-    if (in_degree[u] != in_d) {
+    if (info[u].in_degree != in_d) {
       printf("vertex %u has incorrect in_degree, should be %lu but is %zu\n", u,
-             in_d, in_degree[u]);
+             in_d, info[u].in_degree);
       printf("In neighbors of %u: \n", u);
       // in_degree
       printf("in CSR\n");
       for (size_t j = G.in_offset[u]; j < G.in_offset[u + 1]; j++) {
         NodeId v = G.in_E[j].v;
-        printf("(%u,%d) ", v, vertices_contracted[v]);
+        printf("(%u,%d) ", v, info[v].vertices_contracted);
       }
       printf("\nin hash table\n");
       unsigned long index = newly_inserted_in_edges_hash.first_index(u);
@@ -846,23 +842,23 @@ void PCH::checkDegree() {
           if (newly_inserted_in_edges_hash.H[index].key == UINT_N_MAX) break;
           if (newly_inserted_in_edges_hash.H[index].key == u) {
             NodeId v = newly_inserted_in_edges_hash.H[index].value.first;
-            printf("(%u,%d) ", v, vertices_contracted[v]);
+            printf("(%u,%d) ", v, info[v].vertices_contracted);
           }
         }
         index = newly_inserted_in_edges_hash.next_index(index);
       }
       puts("");
     }
-    assert(in_degree[u] == in_d);
-    if (out_degree[u] != out_d) {
+    assert(info[u].in_degree == in_d);
+    if (info[u].out_degree != out_d) {
       printf("vertex %u has incorrect out_degree, should be %lu but is %zu\n",
-             u, out_d, out_degree[u]);
+             u, out_d, info[u].out_degree);
       printf("Out neighbors of %u: \n", u);
       // out_degree
       printf("in CSR\n");
       for (size_t j = G.offset[u]; j < G.offset[u + 1]; j++) {
         NodeId v = G.E[j].v;
-        printf("(%u,%d) ", v, vertices_contracted[v]);
+        printf("(%u,%d) ", v, info[v].vertices_contracted);
       }
       printf("\nin hash table\n");
       unsigned long index = newly_inserted_out_edges_hash.first_index(u);
@@ -871,19 +867,19 @@ void PCH::checkDegree() {
           if (newly_inserted_out_edges_hash.H[index].key == UINT_N_MAX) break;
           if (newly_inserted_out_edges_hash.H[index].key == u) {
             NodeId v = newly_inserted_out_edges_hash.H[index].value.first;
-            printf("(%u,%d) ", v, vertices_contracted[v]);
+            printf("(%u,%d) ", v, info[v].vertices_contracted);
           }
         } else {
           printf("nv(%u,%d) ",
                  newly_inserted_out_edges_hash.H[index].value.first,
-                 vertices_contracted[newly_inserted_out_edges_hash.H[index]
-                                         .value.first]);
+                 info[newly_inserted_out_edges_hash.H[index].value.first]
+                     .vertices_contracted);
         }
         index = newly_inserted_out_edges_hash.next_index(index);
       }
       puts("");
     }
-    assert(out_degree[u] == out_d);
+    assert(info[u].out_degree == out_d);
   });
 #endif
 }
@@ -907,18 +903,11 @@ void PCH::buildContractionHierarchy() {
   t_contract.reset(), t_prune.reset(), t_clip.reset(), t_score.reset(),
       t_reset.reset(), t_select.reset();
   vertices_need_score_update = overlay_vertices;
-  vertices_settled = sequence<bool>(G.n, true);
-  vertices_contracted = sequence<bool>(G.n, false);
   vertices_contract_order = sequence<NodeId>(G.n, false);
   NodeId tot = 0;
-  int itr = 0;
   bool end_status = false;
   ofstream ofs("pch.tsv", ios::app);
   while (overlay_vertices.size() != 0) {
-    itr++;
-    if (check_full(vertices_around_hash, g_tot_level)) {
-      vertices_around_hash.clear_all();
-    }
     t_prune.start();
     calDisToVerticesAround();
     t_prune.stop();
@@ -943,17 +932,17 @@ void PCH::buildContractionHierarchy() {
     g_upper_score_bound = sampleUpperBound();
     if (g_upper_score_bound == INT_MAX) g_upper_score_bound--;
     parallel_for(0, overlay_vertices.size(), [&](NodeId i) {
-      vertices_settled[overlay_vertices[i]] = true;
+      info[overlay_vertices[i]].vertices_settled = true;
     });
     t_reset.stop();
 
 #ifdef DEBUG
     // printf("checking MIS\n");
     auto contracting_vertices = filter(overlay_vertices, [&](NodeId u) {
-      return edge_diff[u] <= g_upper_score_bound && eligibleForRemoval(u);
+      return info[u].edge_diff <= g_upper_score_bound && eligibleForRemoval(u);
     });
     size_t num_can_be_contracted = count_if(overlay_vertices, [&](NodeId u) {
-      return edge_diff[u] <= g_upper_score_bound;
+      return info[u].edge_diff <= g_upper_score_bound;
     });
     set<int> st;
     double mx_score = 0, mn_score = INT_MAX;
@@ -961,26 +950,29 @@ void PCH::buildContractionHierarchy() {
     EdgeId mx_out_degree = 0, mn_out_degree = INT_MAX;
 
     // for (size_t i = 0; i < contracting_vertices.size(); i++) {
-    //   mn_score = min(mn_score, edge_diff[contracting_vertices[i]]);
+    //   mn_score = min(mn_score, info[contracting_vertices[i]].edge_diff);
     // }
     // g_upper_score_bound = mn_score;
     // contracting_vertices = filter(overlay_vertices, [&](NodeId u) {
-    //   return edge_diff[u] <= g_upper_score_bound && eligibleForRemoval(u);
+    //   return info[u].edge_diff <= g_upper_score_bound &&
+    //   eligibleForRemoval(u);
     // });
     // num_can_be_contracted = count_if(overlay_vertices, [&](NodeId u) {
-    //   return edge_diff[u] <= g_upper_score_bound;
+    //   return info[u].edge_diff <= g_upper_score_bound;
     // });
 
     printf("num_can_be_contracted: %zu\n", num_can_be_contracted);
     printf("num_contracting: %zu\n", contracting_vertices.size());
     for (size_t i = 0; i < contracting_vertices.size(); i++) {
       st.insert(contracting_vertices[i]);
-      mx_score = max(mx_score, edge_diff[contracting_vertices[i]]);
-      mn_score = min(mn_score, edge_diff[contracting_vertices[i]]);
-      mx_in_degree = max(mx_in_degree, in_degree[contracting_vertices[i]]);
-      mn_in_degree = min(mn_in_degree, in_degree[contracting_vertices[i]]);
-      mx_out_degree = max(mx_out_degree, out_degree[contracting_vertices[i]]);
-      mn_out_degree = min(mn_out_degree, out_degree[contracting_vertices[i]]);
+      mx_score = max(mx_score, info[contracting_vertices[i]].edge_diff);
+      mn_score = min(mn_score, info[contracting_vertices[i]].edge_diff);
+      mx_in_degree = max(mx_in_degree, info[contracting_vertices[i]].in_degree);
+      mn_in_degree = min(mn_in_degree, info[contracting_vertices[i]].in_degree);
+      mx_out_degree =
+          max(mx_out_degree, info[contracting_vertices[i]].out_degree);
+      mn_out_degree =
+          min(mn_out_degree, info[contracting_vertices[i]].out_degree);
     }
     printf("bound: %f, max_score: %f, min_score: %f\n", g_upper_score_bound,
            mx_score, mn_score);
@@ -1002,25 +994,25 @@ void PCH::buildContractionHierarchy() {
 #endif
     t_select.start();
     auto contracting_vertices = filter(overlay_vertices, [&](NodeId u) {
-      return edge_diff[u] <= g_upper_score_bound && eligibleForRemoval(u);
+      return info[u].edge_diff <= g_upper_score_bound && eligibleForRemoval(u);
     });
     t_select.stop();
     t_contract.start();
     parallel_for(0, contracting_vertices.size(), [&](size_t i) {
       NodeId u = contracting_vertices[i];
-      assert(vertices_contracted[u] == false);
+      assert(info[u].vertices_contracted == false);
       vertices_contract_order[u] = g_tot_level;
-      NodeId in_idx[in_degree[u]];
-      NodeId in_hop[in_degree[u]];
-      EdgeTy in_wgh[in_degree[u]];
-      NodeId out_idx[out_degree[u]];
-      NodeId out_hop[out_degree[u]];
-      EdgeTy out_wgh[out_degree[u]];
+      NodeId in_idx[info[u].in_degree];
+      NodeId in_hop[info[u].in_degree];
+      EdgeTy in_wgh[info[u].in_degree];
+      NodeId out_idx[info[u].out_degree];
+      NodeId out_hop[info[u].out_degree];
+      EdgeTy out_wgh[info[u].out_degree];
       transfer_neighbors(u, in_idx, in_hop, in_wgh, false);
       transfer_neighbors(u, out_idx, out_hop, out_wgh, true);
-      for (NodeId k1 = 0; k1 < in_degree[u]; ++k1) {
+      for (NodeId k1 = 0; k1 < info[u].in_degree; ++k1) {
         assert(u != in_idx[k1]);
-        for (NodeId k2 = 0; k2 < out_degree[u]; ++k2) {
+        for (NodeId k2 = 0; k2 < info[u].out_degree; ++k2) {
           assert(u != out_idx[k2]);
           if (in_idx[k1] != out_idx[k2]) {
             pair<NodeId, NodeId> nw = make_pair(in_idx[k1], out_idx[k2]);
@@ -1033,9 +1025,9 @@ void PCH::buildContractionHierarchy() {
         }
       }
       EdgeId irr = 0;
-      for (NodeId k1 = 0; k1 < in_degree[u]; ++k1) {
+      for (NodeId k1 = 0; k1 < info[u].in_degree; ++k1) {
         assert(u != in_idx[k1]);
-        assert(vertices_contracted[in_idx[k1]] == false);
+        assert(info[in_idx[k1]].vertices_contracted == false);
 
         pair<NodeId, NodeId> nw = make_pair(in_idx[k1], u);
         EdgeTy tentative_dist = vertices_around_hash.find(nw);
@@ -1043,38 +1035,38 @@ void PCH::buildContractionHierarchy() {
           backward_edges_in_ch_hash.insert(u, make_pair(in_idx[k1], in_wgh[k1]),
                                            in_hop[k1]);
           write_max(&G.level[in_idx[k1]], G.level[u] + 1, std::less<int>());
-          write_add(&removed_neighbor_num[in_idx[k1]], 1);
+          write_add(&info[in_idx[k1]].removed_neighbor_num, 1);
         } else {
           irr++;
         }
-        write_add(&out_degree[in_idx[k1]], -1);
+        write_add(&info[in_idx[k1]].out_degree, -1);
       }
-      in_degree[u] -= irr;
+      info[u].in_degree -= irr;
       irr = 0;
-      for (NodeId k1 = 0; k1 < out_degree[u]; ++k1) {
+      for (NodeId k1 = 0; k1 < info[u].out_degree; ++k1) {
         assert(u != out_idx[k1]);
-        assert(vertices_contracted[out_idx[k1]] == false);
+        assert(info[out_idx[k1]].vertices_contracted == false);
         pair<NodeId, NodeId> nw = make_pair(u, out_idx[k1]);
         EdgeTy tentative_dist = vertices_around_hash.find(nw);
         if (tentative_dist >= out_wgh[k1]) {
           forward_edges_in_ch_hash.insert(
               u, make_pair(out_idx[k1], out_wgh[k1]), out_hop[k1]);
           write_max(&G.level[out_idx[k1]], G.level[u] + 1, std::less<int>());
-          write_add(&removed_neighbor_num[out_idx[k1]], 1);
+          write_add(&info[out_idx[k1]].removed_neighbor_num, 1);
         } else {
           irr++;
         }
-        write_add(&in_degree[out_idx[k1]], -1);
+        write_add(&info[out_idx[k1]].in_degree, -1);
       }
-      out_degree[u] -= irr;
-      vertices_contracted[u] = true;
+      info[u].out_degree -= irr;
+      info[u].vertices_contracted = true;
     });
     t_contract.stop();
     t_reset.start();
     checkDegree();
     NodeId overlay_size = overlay_vertices.size();
     overlay_vertices = parlay::filter(overlay_vertices, [&](NodeId v) {
-      return vertices_contracted[v] == 0;
+      return info[v].vertices_contracted == 0;
     });
     tot +=
         ((double)G.m / overlay_size) * (overlay_size - overlay_vertices.size());
@@ -1083,13 +1075,20 @@ void PCH::buildContractionHierarchy() {
         end_status = true;
       }
     }
-    vertices_need_score_update =
-        parlay::filter(overlay_vertices,
-                       [&](NodeId v) { return vertices_settled[v] == false; });
+    if (check_full(vertices_around_hash, g_tot_level)) {
+      vertices_need_score_update = overlay_vertices;
+      vertices_around_hash.clear_all();
+      early_stop = false;
+    } else {
+      vertices_need_score_update = parlay::filter(
+          overlay_vertices,
+          [&](NodeId v) { return info[v].vertices_settled == false; });
+      early_stop = true;
+    }
     t_reset.stop();
-    if(print_detail){
-      cout <<"Round "<< itr<<"\n";
-      ofs << itr << "\t";
+    if (print_detail) {
+      cout << "Round " << g_tot_level << "\n";
+      ofs << g_tot_level << "\t";
       cout << "Contract " << contracting_vertices.size() << " vertices\n";
       ofs << contracting_vertices.size() << "\t";
       cout << "Update " << vertices_need_score_update.size() << " vertices\n";
@@ -1098,15 +1097,14 @@ void PCH::buildContractionHierarchy() {
       ofs << overlay_size << "\t";
       // EdgeId tot_edge = 0;
       // for (NodeId nid = 0; nid < overlay_vertices.size(); nid++) {
-      //   tot_edge += in_degree[overlay_vertices[nid]];
-      //   tot_edge += out_degree[overlay_vertices[nid]];
+      //   tot_edge += info[overlay_vertices[nid]].in_degree;
+      //   tot_edge += info[overlay_vertices[nid]].out_degree;
       // }
       // cout << "Overlay edges number: " << tot_edge << endl;
       // ofs << tot_edge << "\t";
       ofs << t_reset.total_time() << '\t' << t_prune.total_time() << '\t'
           << t_contract.total_time() << '\t' << t_clip.total_time() << '\t'
           << t_score.total_time() << '\t' << t_select.total_time() << '\n';
-
     }
   }
 
@@ -1123,7 +1121,7 @@ void PCH::buildContractionHierarchy() {
 void PCH::reorderByLayerAndCC(sequence<pair<NodeId, NodeId>> &node_and_ids) {
   if (degree_ordering) {
     parallel_for(0, G.n, [&](size_t i) {
-      if (!vertices_contracted[i]) G.level[i] = 0;
+      if (!info[i].vertices_contracted) G.level[i] = 0;
     });
   }
   sort_inplace(make_slice(node_and_ids), [&](const pair<NodeId, NodeId> &a,
@@ -1225,8 +1223,8 @@ void PCH::dumpCH() {
     GC.offset[GC.n] = 0;
     GC.in_offset[GC.n] = 0;
     parallel_for(0, G.n, [&](size_t i) {
-      GC.offset[i] = out_degree[i];
-      GC.in_offset[i] = in_degree[i];
+      GC.offset[i] = info[i].out_degree;
+      GC.in_offset[i] = info[i].in_degree;
     });
     GC.m = scan_inplace(GC.offset);
     GC.rm = scan_inplace(GC.in_offset);
@@ -1235,10 +1233,10 @@ void PCH::dumpCH() {
     GC.E = sequence<Edge>::uninitialized(GC.m);
     GC.in_E = sequence<Edge>::uninitialized(GC.rm);
     parallel_for(0, G.n, [&](size_t i) {
-      if (!vertices_contracted[i]) {
+      if (!info[i].vertices_contracted) {
         EdgeId bg = GC.offset[i];
         for (EdgeId j = G.offset[i]; j < G.offset[i + 1]; ++j) {
-          if (!vertices_contracted[G.E[j].v]) {
+          if (!info[G.E[j].v].vertices_contracted) {
             GC.E[bg].v = G.E[j].v;
             GC.E[bg].w = G.E[j].w;
             GC.E[bg].hop = G.E[j].hop;
@@ -1250,7 +1248,7 @@ void PCH::dumpCH() {
 
         bg = GC.in_offset[i];
         for (EdgeId j = G.in_offset[i]; j < G.in_offset[i + 1]; ++j) {
-          if (!vertices_contracted[G.in_E[j].v]) {
+          if (!info[G.in_E[j].v].vertices_contracted) {
             GC.in_E[bg].v = G.in_E[j].v;
             GC.in_E[bg].w = G.in_E[j].w;
             GC.in_E[bg].hop = G.in_E[j].hop;
@@ -1279,8 +1277,8 @@ void PCH::dumpCH() {
   G.offset[G.n] = 0;
   G.in_offset[G.n] = 0;
   parallel_for(0, G.n, [&](size_t i) {
-    G.offset[i] = out_degree[i];
-    G.in_offset[i] = in_degree[i];
+    G.offset[i] = info[i].out_degree;
+    G.in_offset[i] = info[i].in_degree;
   });
 
   G.m = scan_inplace(G.offset);
@@ -1327,7 +1325,8 @@ PchGraph PCH::createContractionHierarchy() {
   setOrderedLayer();
   t.stop();
   ofstream ofs("pch.tsv", ios::app);
-  ofs << "\t" << G.m << "\t" << G.rm << "\t" << G.layer << t.total_time() << '\n';
+  ofs << "\t" << G.m << "\t" << G.rm << "\t" << G.layer << t.total_time()
+      << '\n';
   ofs.close();
   printf(
       "G.n: %zu, remaining vertices: %zu, G.m: %zu, G.rm: %zu, G.layer: %zu, "
