@@ -13,7 +13,7 @@ Download and unzip this repository.
 Add the submodule.
 ```shell
 cd Parallel-Contraction-Hierarchy-AEE1/ 
-git submodule update --init --recursive 
+git clone git@github.com:cmuparlay/parlaylib.git
 ```
 
 ### Building
