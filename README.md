@@ -9,17 +9,11 @@ This repository includes the implmentation of parallel contaction hierarchy.
 * g++ &gt;= 7 with support for Cilk Plus and C++17 (It is tested with g++ 7.5.0) 
 
 ### Setting up 
-Clone the library with submodule 
+Download and unzip this repository.
+Add the submodule.
 ```shell
-git clone --recurse-submodules https://github.com/ucrparlay/Parallel-Contraction-Hierarchy.git
-cd Parallel-Contraction-Hierarchy/ 
-```
-
-Alternatively, you can first clone it and add the submodule 
-```shell
-git clone https://github.com/ucrparlay/Parallel-Contraction-Hierarchy.git
+cd Parallel-Contraction-Hierarchy-AEE1/ 
 git submodule update --init --recursive 
-cd Parallel-Contraction-Hierarchy/ 
 ```
 
 ### Building
