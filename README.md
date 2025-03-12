@@ -40,7 +40,7 @@ Options:
 * `-p <max_pop_count>`: the maximum number of vertices to settle during the local search phase. Higher values may improve accuracy at the cost of runtime.
 * `-s <selection_fraction>`: the fraction of feasible vertices to be contracted in each round. For example, 0.1 selects 10% of feasible vertices.
 * `-t <st_query_verify_num>`: the number of s-t queries to verify the correctness of output CH graph.
-* `-v <sssp_query_verify_num>`: the number of sssp queries to verify the correctness of output CH graph.
+* `-q <sssp_query_verify_num>`: the number of sssp queries to verify the correctness of output CH graph.
 * `-d` print the details of each round
 
 For example, if you want to compute the CH of a weighted graph INPUT_NAME and store the output CH graph in OUTPUT_NAME, set max_pop_count=5000, selection_fraction=1, run st query 20 times and print the per round detail during the contraction, you can run:

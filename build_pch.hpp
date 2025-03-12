@@ -21,8 +21,8 @@ struct Node {
   EdgeId in_degree;
   NodeId removed_neighbor_num;
   double edge_diff;
-  bool vertices_settled;
-  bool vertices_contracted;
+  bool vertices_settled = false;
+  bool vertices_contracted = false;
 };
 struct PCH {
  private:
@@ -36,7 +36,6 @@ struct PCH {
   sequence<Node> info;
   sequence<NodeId> overlay_vertices;
   sequence<NodeId> vertices_need_score_update;
-  sequence<NodeId> vertices_contract_order;
   sequence<size_t> priority;
 
   hash_map<NodeId, NodeId, EdgeTy> forward_edges_in_ch_hash;
@@ -903,7 +902,6 @@ void PCH::buildContractionHierarchy() {
   t_contract.reset(), t_prune.reset(), t_clip.reset(), t_score.reset(),
       t_reset.reset(), t_select.reset();
   vertices_need_score_update = overlay_vertices;
-  vertices_contract_order = sequence<NodeId>(G.n, false);
   NodeId tot = 0;
   bool end_status = false;
   ofstream ofs("pch.tsv", ios::app);
@@ -1001,7 +999,6 @@ void PCH::buildContractionHierarchy() {
     parallel_for(0, contracting_vertices.size(), [&](size_t i) {
       NodeId u = contracting_vertices[i];
       assert(info[u].vertices_contracted == false);
-      vertices_contract_order[u] = g_tot_level;
       NodeId in_idx[info[u].in_degree];
       NodeId in_hop[info[u].in_degree];
       EdgeTy in_wgh[info[u].in_degree];
@@ -1130,10 +1127,6 @@ void PCH::reorderByLayerAndCC(sequence<pair<NodeId, NodeId>> &node_and_ids) {
       return a.second < b.second;
     } else if (G.level[a.first] != G.level[b.first]) {
       return G.level[a.first] < G.level[b.first];
-    } else if (vertices_contract_order[a.first] !=
-               vertices_contract_order[b.first]) {
-      return vertices_contract_order[a.first] <
-             vertices_contract_order[b.first];
     }
     return a.first < b.first;
   });
@@ -1144,14 +1137,12 @@ void PCH::reorderByLayerAndCC(sequence<pair<NodeId, NodeId>> &node_and_ids) {
                G.level[node_and_ids[i].first] !=
                    G.level[node_and_ids[i - 1].first];
       }));
-  G.layerOffset[G.layerOffset.size() - 1] = G.n;
   G.ccOffset = pack_index<NodeId>(
-      delayed_seq<bool>(G.layerOffset.size() + 1, [&](size_t i) {
-        return i == 0 || i == G.layerOffset.size() ||
+      delayed_seq<bool>(G.layerOffset.size() , [&](size_t i) {
+        return i == 0 || i == G.layerOffset.size()-1 ||
                node_and_ids[G.layerOffset[i]].second !=
                    node_and_ids[G.layerOffset[i - 1]].second;
       }));
-  G.ccOffset[G.ccOffset.size() - 1] = G.layerOffset.size() - 1;
   G.ccRank = sequence<NodeId>(G.n);
   parallel_for(0, G.ccOffset.size() - 1, [&](size_t i) {
     parallel_for(G.layerOffset[G.ccOffset[i]], G.layerOffset[G.ccOffset[i + 1]],
@@ -1199,16 +1190,17 @@ void PCH::setOrderedLayer() {
                [](const pair<NodeId, NodeId> &a,
                   const pair<NodeId, NodeId> &b) { return a.first < b.first; });
   G.layer = 0;
-  sequence<std::pair<size_t, NodeId>> layerMap(G.n);
   G.rank = sequence<NodeId>(G.n);
   G.layer = reduce(make_slice(G.level), maxm<NodeId>());
 
   reorderByLayerAndCC(node_and_ids);
 
   parallel_for(0, G.n, [&](size_t i) { G.rank[node_and_ids[i].first] = i; });
+  node_and_ids.clear();
   sequence<NodeId> rank_reverse(G.n);
   parallel_for(0, G.n, [&](size_t i) { rank_reverse[G.rank[i]] = G.level[i]; });
   parallel_for(0, G.n, [&](size_t i) { G.level[i] = rank_reverse[i]; });
+  rank_reverse.clear();
   reorder(G, true);
   reorder(G, false);
 }

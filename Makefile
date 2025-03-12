@@ -1,5 +1,5 @@
 #CC = clang++
-CXXFLAGS = -O3 -mcx16 -march=native -std=c++20 -Wall -Wextra
+CXXFLAGS = -O3 -mcx16 -std=c++20 -Wall -Wextra
 CC = clang++
 INCLUDE_PATH = -Iparlaylib/include/
 all: build_pch query
