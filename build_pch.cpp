@@ -20,10 +20,10 @@ int main(int argc, char *argv[]) {
     return 0;
   }
   char c;
-  size_t max_pop_count = 500;
+  int max_pop_count = 500;
   int bidirect_verify_num = 0;
   int sssp_verify_num = 0;
-  NodeId degree_bound = 0;
+  int degree_bound = 0;
   bool degree_bounded = false, print_detail = false, write_ch = false;
   double sample_bound = 1;
   while ((c = getopt(argc, argv, "i:o:p:s:t:q:b:d")) != -1) {

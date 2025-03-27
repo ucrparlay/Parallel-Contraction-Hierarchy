@@ -827,7 +827,7 @@ void PCH::checkDegree() {
       index = newly_inserted_in_edges_hash.next_index(index);
     }
     if (info[u].in_degree != in_d) {
-      printf("vertex %u has incorrect in_degree, should be %lu but is %zu\n", u,
+      printf("vertex %u has incorrect in_degree, should be %lu but is %u\n", u,
              in_d, info[u].in_degree);
       printf("In neighbors of %u: \n", u);
       // in_degree
@@ -852,7 +852,7 @@ void PCH::checkDegree() {
     }
     assert(info[u].in_degree == in_d);
     if (info[u].out_degree != out_d) {
-      printf("vertex %u has incorrect out_degree, should be %lu but is %zu\n",
+      printf("vertex %u has incorrect out_degree, should be %lu but is %u\n",
              u, out_d, info[u].out_degree);
       printf("Out neighbors of %u: \n", u);
       // out_degree
@@ -868,7 +868,7 @@ void PCH::checkDegree() {
           if (newly_inserted_out_edges_hash.H[index].key == UINT_N_MAX) break;
           if (newly_inserted_out_edges_hash.H[index].key == u) {
             NodeId v = newly_inserted_out_edges_hash.H[index].value.first;
-            printf("(%u,%d) ", v, info[v].vertices_contracted);
+            printf("(%u,%d) ", v, vertices_contracted[v]);
           }
         } else {
           printf("nv(%u,%d) ",
@@ -938,18 +938,20 @@ void PCH::buildContractionHierarchy() {
     });
     t_reset.stop();
 
-#ifdef DEBUG
-    // printf("checking MIS\n");
+    t_select.start();
     auto contracting_vertices = filter(overlay_vertices, [&](NodeId u) {
       return info[u].edge_diff <= g_upper_score_bound && eligibleForRemoval(u);
     });
+    t_select.stop();
+#ifdef DEBUG
+    // printf("checking MIS\n");
     size_t num_can_be_contracted = count_if(overlay_vertices, [&](NodeId u) {
       return info[u].edge_diff <= g_upper_score_bound;
     });
     set<int> st;
-    double mx_score = 0, mn_score = INT_MAX;
-    EdgeId mx_in_degree = 0, mn_in_degree = INT_MAX;
-    EdgeId mx_out_degree = 0, mn_out_degree = INT_MAX;
+    float mx_score = 0, mn_score = INT_MAX;
+    NodeId mx_in_degree = 0, mn_in_degree = INT_MAX;
+    NodeId mx_out_degree = 0, mn_out_degree = INT_MAX;
 
     // for (size_t i = 0; i < contracting_vertices.size(); i++) {
     //   mn_score = min(mn_score, info[contracting_vertices[i]].edge_diff);
@@ -978,9 +980,9 @@ void PCH::buildContractionHierarchy() {
     }
     printf("bound: %f, max_score: %f, min_score: %f\n", g_upper_score_bound,
            mx_score, mn_score);
-    printf("max_in_degree: %lu, min_in_degree: %lu\n", mx_in_degree,
+    printf("max_in_degree: %u, min_in_degree: %u\n", mx_in_degree,
            mn_in_degree);
-    printf("max_out_degree: %lu, min_out_degree: %lu\n", mx_out_degree,
+    printf("max_out_degree: %u, min_out_degree: %u\n", mx_out_degree,
            mn_out_degree);
     parallel_for(0, contracting_vertices.size(), [&](size_t i) {
       NodeId u = contracting_vertices[i];
@@ -988,17 +990,12 @@ void PCH::buildContractionHierarchy() {
                    [&](size_t j) { assert(!st.count(G.E[j].v)); });
       parallel_for(G.in_offset[u], G.in_offset[u + 1],
                    [&](size_t j) { assert(!st.count(G.in_E[j].v)); });
-      bool flag =
-          iterateHashTable(u, [&](NodeId u, NodeId v) { return !st.count(v); });
-      assert(flag == true);
+      // bool flag =
+      //     iterateHashTable(u, [&](NodeId u, NodeId v) { return !st.count(v); });
+      // assert(flag == true);
     });
     checkDegree();
 #endif
-    t_select.start();
-    auto contracting_vertices = filter(overlay_vertices, [&](NodeId u) {
-      return info[u].edge_diff <= g_upper_score_bound && eligibleForRemoval(u);
-    });
-    t_select.stop();
     t_contract.start();
     parallel_for(0, contracting_vertices.size(), [&](size_t i) {
       NodeId u = contracting_vertices[i];
