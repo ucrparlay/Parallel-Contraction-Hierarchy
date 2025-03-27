@@ -50,7 +50,7 @@ struct PCH {
 
   // helper func
   bool check_edge_valid(size_t idx, NodeId v, bool in_csr);
-  void transfer_neighbors(NodeId u, NodeId *idx, NodeId *hop, EdgeTy *wgh,
+  void transfer_neighbors(NodeId u, vector<NodeId> &idx, vector<NodeId> &hop, vector<EdgeTy> &wgh,
                           bool forward);
   EdgeId clip_from_hash(sequence<Edge> &E,
                         hash_map<NodeId, NodeId, EdgeTy> &hashMap, NodeId nd,
@@ -394,12 +394,12 @@ bool PCH::calScore() {
         return;
       }
     }
-    NodeId in_idx[info[u].in_degree];
-    NodeId in_hop[info[u].in_degree];
-    EdgeTy in_wgh[info[u].in_degree];
-    NodeId out_idx[info[u].out_degree];
-    NodeId out_hop[info[u].out_degree];
-    EdgeTy out_wgh[info[u].out_degree];
+    vector<NodeId> in_idx(info[u].in_degree);
+    vector<NodeId> in_hop(info[u].in_degree);
+    vector<EdgeTy> in_wgh(info[u].in_degree);
+    vector<NodeId> out_idx(info[u].out_degree);
+    vector<NodeId> out_hop(info[u].out_degree);
+    vector<EdgeTy> out_wgh(info[u].out_degree);
     transfer_neighbors(u, in_idx, in_hop, in_wgh, false);
     transfer_neighbors(u, out_idx, out_hop, out_wgh, true);
     for (NodeId k1 = 0; k1 < info[u].in_degree; ++k1) {
@@ -424,12 +424,12 @@ bool PCH::calScore() {
     if (info[u].in_degree == 0 || info[u].out_degree == 0) {
       info[u].edge_diff = 0;
     } else {
-      NodeId in_idx[info[u].in_degree];
-      NodeId in_hop[info[u].in_degree];
-      EdgeTy in_wgh[info[u].in_degree];
-      NodeId out_idx[info[u].out_degree];
-      NodeId out_hop[info[u].out_degree];
-      EdgeTy out_wgh[info[u].out_degree];
+      vector<NodeId> in_idx(info[u].in_degree);
+      vector<NodeId> in_hop(info[u].in_degree);
+      vector<EdgeTy> in_wgh(info[u].in_degree);
+      vector<NodeId> out_idx(info[u].out_degree);
+      vector<NodeId> out_hop(info[u].out_degree);
+      vector<EdgeTy> out_wgh(info[u].out_degree);
       transfer_neighbors(u, in_idx, in_hop, in_wgh, false);
       transfer_neighbors(u, out_idx, out_hop, out_wgh, true);
       EdgeId removed_arc_num = 1 + info[u].in_degree + info[u].out_degree,
@@ -621,7 +621,7 @@ bool PCH::insertHelper(NodeId left, NodeId right, EdgeTy len, NodeId hop) {
   return idx_right.first;
 }
 
-void PCH::transfer_neighbors(NodeId u, NodeId *idx, NodeId *hop, EdgeTy *wgh,
+void PCH::transfer_neighbors(NodeId u, vector<NodeId> &idx, vector<NodeId> &hop, vector<EdgeTy> &wgh,
                              bool forward) {
   const sequence<EdgeId> &offset = forward ? G.offset : G.in_offset;
   const sequence<Edge> &E = forward ? G.E : G.in_E;
@@ -1000,12 +1000,12 @@ void PCH::buildContractionHierarchy() {
     parallel_for(0, contracting_vertices.size(), [&](size_t i) {
       NodeId u = contracting_vertices[i];
       assert(vertices_contracted[u] == false);
-      NodeId in_idx[info[u].in_degree];
-      NodeId in_hop[info[u].in_degree];
-      EdgeTy in_wgh[info[u].in_degree];
-      NodeId out_idx[info[u].out_degree];
-      NodeId out_hop[info[u].out_degree];
-      EdgeTy out_wgh[info[u].out_degree];
+      vector<NodeId> in_idx(info[u].in_degree);
+      vector<NodeId> in_hop(info[u].in_degree);
+      vector<EdgeTy> in_wgh(info[u].in_degree);
+      vector<NodeId> out_idx(info[u].out_degree);
+      vector<NodeId> out_hop(info[u].out_degree);
+      vector<EdgeTy> out_wgh(info[u].out_degree);
       transfer_neighbors(u, in_idx, in_hop, in_wgh, false);
       transfer_neighbors(u, out_idx, out_hop, out_wgh, true);
       for (NodeId k1 = 0; k1 < info[u].in_degree; ++k1) {
