@@ -6,8 +6,9 @@ This repository includes the implmentation of parallel contaction hierarchy.
 ## Developing 
 
 ### Prerequisites 
-* g++ &gt;= 7 with support for Cilk Plus and C++17 (It is tested with g++ 7.5.0) 
-
+* CMake >= 3.15 
+* g++ or clang with C++17 features support (tested with g++ 12.1.1 and clang 14.0.6) on Linux machines.
+* We use [ParlayLib](https://github.com/cmuparlay/parlaylib) to support fork-join parallelism and some parallel primitives. It is provided as a submodule in our repository. 
 ### Setting up 
 Clone the library with submodule 
 ```shell
