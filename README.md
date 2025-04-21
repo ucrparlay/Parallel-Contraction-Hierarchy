@@ -63,3 +63,17 @@ For example, for a origin_graph ORIGIN_GRAPH and its corresponding ch_graph CH_G
 ```shell
 ./query ORIGIN_GRAPH CH_GRAPH 20 40
 ```
+
+Reference
+--------
+Zijin Wan, Xiaojun Dong, Letong Wang, Enzuo zhu, Yan Gu and Yihan Sun. [*Parallel Contraction Hierarchies Can Be Efficient and Scalable*](https://arxiv.org/abs/2412.18008). To appear at International Conference on Supercomputing (ICS), 2025
+
+If you use our code, please cite our paper:
+```
+@inproceedings{wan2025parallelch,
+  author    = {Wan, Zijin and Dong, Xiaojun and Wang, Letong and Zhu, Enzuo and Gu, Yan and Sun, Yihan},
+  title     = {Parallel Contraction Hierarchies Can Be Efficient and Scalable},
+  booktitle = {International Conference on Supercomputing (ICS)},
+  year      = {2025}
+}
+```
