@@ -1,7 +1,7 @@
-Parallel-Contraction-Hierarchy 
+SPoCH: Scalable Parallelization of Contraction Hierarchies
 ====================== 
 
-This repository includes the implmentation of parallel contaction hierarchy. 
+This repository includes the implmentation of SPoCH (Scalable Parallelization of Contraction Hierarchies). 
 
 ## Developing 
 
