@@ -70,7 +70,7 @@ Zijin Wan, Xiaojun Dong, Letong Wang, Enzuo zhu, Yan Gu and Yihan Sun. [*Paralle
 
 If you use our code, please cite our paper:
 ```
-@inproceedings{wan2025spoch,
+@inproceedings{wan2025parallel,
   author    = {Wan, Zijin and Dong, Xiaojun and Wang, Letong and Zhu, Enzuo and Gu, Yan and Sun, Yihan},
   title     = {Parallel Contraction Hierarchies Can Be Efficient and Scalable},
   booktitle = {International Conference on Supercomputing (ICS)},
