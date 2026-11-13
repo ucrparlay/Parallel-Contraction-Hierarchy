@@ -129,7 +129,7 @@ struct hash_map2 {
   static constexpr V V_MAX = numeric_limits<V>::max();
   using K = std::pair<K1, K2>;
   using KV = std::pair<K, V>;
-  using index = K1;
+  using index = uint64_t;  // m may exceed the range of K1
   uint64_t m;
   index first_index(K k) const {
     return hash(((uint64_t)k.first << 32 | k.second) + 1) % m;
@@ -152,8 +152,9 @@ struct hash_map2 {
         equal(equal),
         H(parlay::sequence<entry>(m)) {}
 
-  void insert(K &k, V v) {
-    if (k.first == k.second) return;
+  // returns true if k was not in the table
+  bool insert(K &k, V v) {
+    if (k.first == k.second) return false;
     index i = first_index(k);
     size_t num_probes = 0;
     while (true) {
@@ -166,12 +167,13 @@ struct hash_map2 {
         CAS(&H[i].key.first, KEY_MAX, k.first);
       }
       if (H[i].key.first == k.first) {
+        bool added = false;
         if (H[i].key.second == KEY_MAX) {
-          CAS(&H[i].key.second, KEY_MAX, k.second);
+          added = CAS(&H[i].key.second, KEY_MAX, k.second);
         }
         if (H[i].key.second == k.second) {
           write_min(&H[i].value, v, std::less<V>());
-          return;
+          return added;
         }
       }
       i = next_index(i);
@@ -201,5 +203,55 @@ struct hash_map2 {
 
   void clear_all() {
     parallel_for(0, m, [&](index i) { delete_index(i); });
+  }
+
+  // Keeps the entries whose key satisfies keep and deletes the others, in
+  // place; returns the number of entries kept. Every run of full slots is
+  // emptied and its kept entries are inserted again in their order: an entry
+  // then only moves towards its first index, so it stays in its run, and the
+  // runs are processed in parallel. Not concurrent with other operations.
+  template <typename F>
+  size_t filter(F keep) {
+    // positions are counted from an empty slot, so no run wraps around
+    index start = 0;
+    while (H[start].key.first != KEY_MAX) start = next_index(start);
+    auto full = [&](index j) {
+      return H[(start + j) % m].key.first != KEY_MAX;
+    };
+    constexpr index BLOCK = 1 << 16;  // a run belongs to the block it starts in
+    index num_blocks = (m + BLOCK - 1) / BLOCK;
+    // the first slot of each block after the run that started in a previous
+    // block, found before any run is changed
+    auto first = parlay::tabulate(num_blocks, [&](index b) {
+      index j = b * BLOCK, end = std::min(m, j + BLOCK);
+      if (j > 0) {
+        while (j < end && full(j - 1) && full(j)) j++;
+      }
+      return j;
+    });
+    sequence<size_t> kept(num_blocks, 0);
+    parallel_for(0, num_blocks, [&](index b) {
+      std::vector<entry> run;
+      index j = first[b], end = std::min(m, (b + 1) * BLOCK);
+      while (j < end) {
+        if (!full(j)) {
+          j++;
+          continue;
+        }
+        run.clear();
+        for (; j < m && full(j); j++) {
+          entry &e = H[(start + j) % m];
+          if (keep(e.key)) run.push_back(e);
+          e = entry();
+        }
+        for (entry &e : run) {
+          index i = first_index(e.key);
+          while (H[i].key.first != KEY_MAX) i = next_index(i);
+          H[i] = e;
+        }
+        kept[b] += run.size();
+      }
+    });
+    return parlay::reduce(kept);
   }
 };

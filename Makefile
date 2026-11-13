@@ -32,7 +32,7 @@ ifdef STDALLOC
 CXXFLAGS += -DPARLAY_USE_STD_ALLOC
 endif
 
-build_pch:	build_pch.cpp build_pch.hpp graph.hpp dijkstra.hpp
+build_pch:	build_pch.cpp build_pch.hpp graph.hpp dijkstra.hpp flat_hash.h hash_map.h
 	$(CC) $(CXXFLAGS) $(INCLUDE_PATH) build_pch.cpp -o build_pch
 
 query:	query_test.cpp graph.hpp query.hpp
